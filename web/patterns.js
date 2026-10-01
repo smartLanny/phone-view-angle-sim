@@ -280,6 +280,70 @@
     roundRect(g, W / 2 - 17 * u, H - 3.2 * u, 34 * u, 1.3 * u, 0.65 * u); g.fill();
   }
 
+  /** 阅读页：大小字号、浅灰卡片、蓝色链接混排，用来看大角度下文字还认不认得出。 */
+  const READ = [
+    ['h', '周末出行计划'],
+    ['s', '10 月 4 日 周六 · 共 3 项'],
+    ['t', '08:30  出发'],
+    ['p', '地铁 2 号线换乘 10 号线，出站后步行约 600 米。记得带上身份证和充电宝。'],
+    ['t', '10:00  美术馆'],
+    ['p', '提前在小程序预约 10:00 场次，入口在东门。三楼的临展只开放到下午四点。'],
+    ['c', '提醒', '馆内禁止使用闪光灯，大件行李需寄存。'],
+    ['t', '12:30  午饭'],
+    ['p', '附近那家面馆中午排队较长，可以先在线取号。备选：商场五楼的简餐。'],
+    ['t', '15:00  河边散步'],
+    ['p', '天气预报 22°C 多云，傍晚有风，带一件薄外套。'],
+    ['l', '查看路线详情'],
+  ];
+  function read(g, W, H, dark) {
+    const u = Math.min(W, H) / 100, land = W > H;
+    const c = dark
+      ? { bg: '#000', text: '#f2f2f2', sub: '#8d8d93', card: '#1c1c1e', link: '#4c9dff', rule: '#2c2c2e' }
+      : { bg: '#fff', text: '#111', sub: '#8a8a8e', card: '#f2f3f5', link: '#1a73e8', rule: '#e5e5ea' };
+    const m = land ? 14 * u : 5.5 * u, cw = W - 2 * m;
+    const font = (w, px) => `${w} ${px * u}px ${FONT}`;
+    g.fillStyle = c.bg; g.fillRect(0, 0, W, H);
+    if (!land) statusBar(g, W, u, c.text);
+    g.textBaseline = 'alphabetic';
+
+    // 按字符折行（中文无空格）
+    const wrap = (text, x, y, maxW, lh) => {
+      let line = '';
+      for (const ch of text) {
+        if (g.measureText(line + ch).width > maxW && line) { g.fillText(line, x, y); y += lh; line = ch; } else line += ch;
+      }
+      if (line) { g.fillText(line, x, y); y += lh; }
+      return y;
+    };
+
+    let y = land ? 14 * u : 24 * u;
+    for (const [kind, a, b] of READ) {
+      if (y > H - 6 * u) break;
+      g.fillStyle = c.text;
+      switch (kind) {
+        case 'h': g.font = font(700, 7.4); g.fillText(a, m, y); y += 6.5 * u; break;
+        case 's': g.fillStyle = c.sub; g.font = font(400, 3.6); g.fillText(a, m, y); y += 9 * u;
+          g.fillStyle = c.rule; g.fillRect(m, y - 5.5 * u, cw, Math.max(1, 0.12 * u)); break;
+        case 't': g.font = font(600, 4.9); g.fillText(a, m, y); y += 6.4 * u; break;
+        case 'p': g.font = font(400, 4.2); y = wrap(a, m, y, cw, 6.3 * u) + 3.4 * u; break;
+        case 'c': {
+          g.font = font(400, 3.9);
+          const lines = Math.ceil(g.measureText(b).width / (cw - 8 * u)) || 1;
+          const ch = (8.5 + lines * 5.6) * u;
+          g.fillStyle = c.card; roundRect(g, m, y - 4.5 * u, cw, ch, 3 * u); g.fill();
+          g.fillStyle = c.text; g.font = font(600, 3.9); g.fillText(a, m + 4 * u, y + 1 * u);
+          g.fillStyle = c.sub; g.font = font(400, 3.9);
+          wrap(b, m + 4 * u, y + 6.8 * u, cw - 8 * u, 5.6 * u);
+          y += ch + 5 * u;
+          break;
+        }
+        case 'l': g.fillStyle = c.link; g.font = font(500, 4.2); g.fillText(a + ' ›', m, y); y += 7 * u; break;
+      }
+    }
+    g.fillStyle = c.text;
+    roundRect(g, W / 2 - 17 * u, H - 3.2 * u, 34 * u, 1.3 * u, 0.65 * u); g.fill();
+  }
+
   function gray(g, W, H) {
     const bands = 12;
     for (let i = 0; i < bands; i++) {
@@ -327,6 +391,7 @@
       case 'checker': checker(g, W, H); break;
       case 'rgbw': rgbw(g, W, H); break;
       case 'dark': ui(g, W, H, true); break;
+      case 'read': read(g, W, H, false); break;
       default: ui(g, W, H, false);
     }
     return cv;

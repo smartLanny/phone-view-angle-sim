@@ -5,6 +5,7 @@
   const SPECS = window.DEVICE_SPECS;
   const $ = (id) => document.getElementById(id);
   const DEG = Math.PI / 180;
+  const SERIES = ['#3987e5', '#d95926'];   // 对比时左 / 右两台的标识色（dataviz 参考调色板，深色底）
 
   // 外观按机型名前缀匹配，同一机型不同屏幕供应商（如 “iPhone 18 Pro Max GH3”）共用外观
   const KNOWN = Object.keys(SPECS);
@@ -19,24 +20,79 @@
   const variant = (device, privacy) => PROFILES.find((p) => p.device === device && p.privacy === privacy);
   const hasPrivacy = (device) => !!variant(device, true) && !!variant(device, false);
   const pick = (device) => variant(device, false) || variant(device, true);
+  const shortName = (device) => device.split(' ')[0];
+  /** 图例用短名：“小米 · 防窥关闭”“iPhone GH3 · 未贴膜”。 */
+  function shortLabel(p) {
+    const k = specKey(p.device) || p.device, suffix = p.device.slice(k.length).trim();
+    const name = [shortName(p.device), suffix].filter(Boolean).join(' ');
+    return hasPrivacy(p.device) ? `${name} · ${privacyText(p.device)[p.privacy ? 'on' : 'off']}` : name;
+  }
 
   const S = {
-    dist: 300, tilt: [0, 0], rot: 0, mode: 0, pattern: 'ui', colors: {},
+    dist: 300, tilt: [0, 0], theta: 0, psi: 0, rot: 0, mode: 0, pattern: 'ui', colors: {},
     compare: false, device: DEVICES[0], privacy: false,
     stereo: false, cross: false, ipd: 63, gap: 8, size: 1,
     slots: DEVICES.length > 1
       ? [pick(DEVICES[0]).id, pick(DEVICES[1]).id]
       : [PROFILES[0].id, (PROFILES[1] || PROFILES[0]).id],
+    padMetric: 'lum', pal: 'jet', tab: 'view', clean: false, sweep: null,
   };
 
+  // 缺失方位用上下镜像补全（见 model.js 'vmirror'）
   const models = {};
-  const getModel = (id) => models[id] || (models[id] = AngleModel.createModel({ angles: DATA.angles, sets: byId(id).sets }));
+  const getModel = (id) => models[id] ||
+    (models[id] = AngleModel.createModel({ angles: DATA.angles, sets: byId(id).sets }, { fill: 'vmirror' }));
   const MAX_TILT = getModel(PROFILES[0].id).thetaMax;
   let image = null;
 
+  /** 查找表（θ 1° × ψ 1°），渲染与方向盘热力图共用。 */
+  const luts = {};
+  const getLUT = (id) => luts[id] || (luts[id] = getModel(id).buildLUT());
+
+  /** 方向盘 / 曲线用的白场网格：亮度比与 JNCD，双线性插值。 */
+  const grids = {};
+  function getGrid(id) {
+    if (grids[id]) return grids[id];
+    const m = getModel(id), lut = getLUT(id), w = lut.width;
+    const refW = m.ref.W, refUV = m.uvPrime(refW);
+    const lum = new Float32Array(w * 360), jn = new Float32Array(w * 360);
+    for (let psi = 0; psi < 360; psi++) {
+      for (let th = 0; th < w; th++) {
+        const o = (((3 * 360) + psi) * w + th) * 4;
+        const W = [lut.data[o], lut.data[o + 1], lut.data[o + 2]];
+        const uv = m.uvPrime(W);
+        lum[psi * w + th] = W[1] / refW[1];
+        jn[psi * w + th] = Math.hypot(uv[0] - refUV[0], uv[1] - refUV[1]) / AngleModel.JNCD;
+      }
+    }
+    const sample = (arr) => (theta, psi) => {
+      const x = Math.min(Math.max(theta, 0), w - 1), x0 = Math.min(Math.floor(x), w - 2), fx = x - x0;
+      const y = AngleModel.norm360(psi), y0 = Math.floor(y) % 360, y1 = (y0 + 1) % 360, fy = y - Math.floor(y);
+      const a = arr[y0 * w + x0], b = arr[y0 * w + x0 + 1], c = arr[y1 * w + x0], d = arr[y1 * w + x0 + 1];
+      return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
+    };
+    return (grids[id] = { lum: sample(lum), jncd: sample(jn) });
+  }
+
+  // 全部数据里的最大色偏 / 亮度（粗扫），用来固定方向盘和曲线的量程，切换机型时刻度不跳
+  const RANGE = (() => {
+    let j = 0, l = 1;
+    for (const p of PROFILES) {
+      const m = getModel(p.id);
+      for (let th = 5; th <= m.thetaMax; th += 5) {
+        for (let psi = 0; psi < 360; psi += 15) {
+          const e = m.evalAt(th, psi);
+          j = Math.max(j, e.jncd); l = Math.max(l, e.yRatio);
+        }
+      }
+    }
+    return { jncd: j, lum: l };
+  })();
+  const JMAX = (() => { const s = [2, 4, 6, 8, 10, 12, 16, 20, 24, 30, 40]; return s.find((v) => v >= RANGE.jncd) || Math.ceil(RANGE.jncd); })();
+
   const PRIVACY_TEXT = {
-    mode: { switch: '防窥模式', on: '防窥开启', off: '防窥关闭' },
-    film: { switch: '贴防窥膜', on: '贴防窥膜', off: '未贴膜' },
+    mode: { switch: '防窥模式', on: '防窥开启', off: '防窥关闭', hint: '系统防窥开 / 关各一组实测', short: '防窥' },
+    film: { switch: '贴防窥膜', on: '贴防窥膜', off: '未贴膜', hint: '贴膜前 / 后各一组实测', short: '贴膜' },
   };
   const privacyText = (device) => PRIVACY_TEXT[(variant(device, true) || {}).privacyKind] || PRIVACY_TEXT.mode;
   function profileLabel(p, withDevice = DEVICES.length > 1) {
@@ -109,9 +165,22 @@
   }
 
   // 投影: 眼睛位于 (0,0,D)（双眼立体时为 (∓瞳距/2,0,D)）看向屏幕中心；缩放使手机始终完整可见。
+
+  // 投影: 眼睛位于 (0,0,D)（双眼立体时为 (∓瞳距/2,0,D)）看向屏幕中心；缩放使手机始终完整可见。
   let views = [];
   /** 左右眼的世界坐标（mm）。 */
   const eyePos = (side) => [side * S.ipd / 2, 0, S.dist];
+
+  /** 舞台可用区域（去掉左右栏 / 底部抽屉 / 左上角读数）。 */
+  function stageRect() {
+    const W = canvas.clientWidth, H = canvas.clientHeight, L = document.body.dataset.layout;
+    const rc = (id) => $(id).getBoundingClientRect();
+    if (S.clean) return { x0: 0, x1: W, top: rc('hud').bottom + 8, bottom: H - 12 };
+    if (L === 'wide') return { x0: rc('rail').right + 12, x1: rc('panel').left - 12, top: 20, bottom: H - 16 };
+    if (L === 'side') return { x0: 0, x1: rc('panel').left - 8, top: rc('hud').bottom + 8, bottom: H - 16 };
+    return { x0: 0, x1: W, top: rc('hud').bottom + 4, bottom: rc('panel').top - 6 };
+  }
+
   /**
    * 每台手机一个区域（对比时左右并排），共用同一缩放以便公平对比。
    * 双眼立体时为同一台手机的左右眼两个区域，按高度撑满、中间间隙为 S.gap；交叉视时左右对调。
@@ -120,20 +189,14 @@
     const n = devs.length;
     const boxCorners = devs.flatMap((d) => d.corners);
     const W = canvas.clientWidth, H = canvas.clientHeight;
-    const wide = W > 760;
-    const panel = $('panel');
-    const panelW = wide ? panel.offsetWidth + 48 : 0;
-    const capH = 64;
-    const short = H <= 620;   // 与 CSS 断点一致：隐藏副标题与页脚
-    let top = short ? 44 : wide ? 80 : 64;
-    let bottom = (wide ? (short ? 8 : 44) : panel.offsetHeight + 20) + capH;
-    // 高度不足时先压缩页眉留白与页脚，仍不足则保证手机区域的最小高度（允许与页眉/面板略微重叠）
-    const minH = Math.min(Math.max(H * 0.45, 220), 460);
-    let avail = H - top - bottom;
-    if (avail < minH) { const t = Math.min(top - 12, minH - avail); top -= t; avail += t; }
-    if (avail < minH && wide) { const b = Math.min(bottom - capH, minH - avail); bottom -= b; avail += b; }
-    avail = Math.max(avail, minH);
-    const areaW = W - panelW;
+    const R = stageRect();
+    const sheet = document.body.dataset.layout === 'sheet';
+    // 数据卡高度按上一帧实测（随布局 / 字号变化），首帧用估计值
+    const capEl = $('cap0');
+    const capH = (capEl.offsetHeight || (S.stereo ? 86 : sheet ? 64 : 76)) + 14;
+    const top = R.top;
+    const avail = Math.max(R.bottom - capH - top, 140);
+    const areaX0 = R.x0, areaW = Math.max(R.x1 - R.x0, 200);
     const sides = S.stereo ? (S.cross ? [1, -1] : [-1, 1]) : devs.map(() => 0);
     const gap = S.stereo ? S.gap : 0;
     const colMax = S.stereo ? (areaW - gap) / 2 : areaW / n;
@@ -153,7 +216,7 @@
     };
     const extent = (mat) => {
       const [mx, my] = span(mat);
-      return Math.min(halfW / mx, halfH / my) * (S.stereo ? 0.97 : 0.9);
+      return Math.min(halfW / mx, halfH / my) * (S.stereo ? 0.97 : 0.92);
     };
     const z = -S.rot * DEG;
     const flat = [Math.cos(z), -Math.sin(z), 0, Math.sin(z), Math.cos(z), 0, 0, 0, 1];
@@ -179,20 +242,22 @@
       colW = Math.min(colMax, 2 * mxE * f + 16);
     }
     const centers = S.stereo
-      ? [areaW / 2 - (colW + gap) / 2, areaW / 2 + (colW + gap) / 2]
-      : devs.map((_, i) => (i + 0.5) * colW);
+      ? [areaX0 + areaW / 2 - (colW + gap) / 2, areaX0 + areaW / 2 + (colW + gap) / 2]
+      : devs.map((_, i) => areaX0 + (i + 0.5) * colW);
     const envH = myE * f;
     const cy = top + halfH;
-    const bottomY = S.stereo ? Math.min(top + 2 * halfH, cy + envH + 8) : top + 2 * halfH;
+    const bottomY = Math.min(top + 2 * halfH, cy + envH + 8);
     const frameTop = S.stereo ? Math.max(top - 10, cy - envH - 10) : top;
     views = devs.map((d, i) => ({
       dev: d, W, H, f, D, w: colW, x0: centers[i] - colW / 2, x1: centers[i] + colW / 2,
       cx: centers[i], cy, top: frameTop, bottomY,
       eye: eyePos(sides[i]), side: sides[i],
     }));
+    // 舞台聚光跟着手机走；提示文字居中于舞台
+    document.documentElement.style.setProperty('--sx', ((areaX0 + areaW / 2) / W * 100).toFixed(1) + '%');
+    $('hint').style.left = areaX0 + areaW / 2 + 'px';
     return views;
   }
-
   // ---------- WebGL ----------
   const canvas = $('gl');
   const gl = canvas.getContext('webgl2', { antialias: true, depth: true });
@@ -338,6 +403,9 @@
   uniform vec3 uCut;
   uniform float uCorner, uRot;
   uniform int uMode;
+  uniform sampler2D uPal;   // 256×1 色表（热力图配色，与方向盘一致）
+  uniform int uBands;       // >0 时分级显示
+  uniform bool uPalFlip;
   ${COLOR_GLSL}
 
   vec3 lut(int blk, float th, float ps) {
@@ -354,19 +422,6 @@
     vec3 c = texelFetch(uLut, ivec2(x0, off + y1), 0).rgb;
     vec3 d = texelFetch(uLut, ivec2(x0 + 1, off + y1), 0).rgb;
     return mix(mix(a, b, fx), mix(c, d, fx), fy);
-  }
-
-  vec3 turbo(float x) {
-    x = clamp(x, 0.0, 1.0);
-    const vec4 kr4 = vec4(0.13572138, 4.61539260, -42.66032258, 132.13108234);
-    const vec4 kg4 = vec4(0.09140261, 2.19418839, 4.84296658, -14.18503333);
-    const vec4 kb4 = vec4(0.10667330, 12.64194608, -60.58204836, 110.36276771);
-    const vec2 kr2 = vec2(-152.94239396, 59.28637943);
-    const vec2 kg2 = vec2(4.27729857, 2.82956604);
-    const vec2 kb2 = vec2(-89.90310912, 27.34824973);
-    vec4 v4 = vec4(1.0, x, x * x, x * x * x);
-    vec2 v2 = v4.zw * v4.z;
-    return vec3(dot(v4, kr4) + dot(v2, kr2), dot(v4, kg4) + dot(v2, kg2), dot(v4, kb4) + dot(v2, kb2));
   }
 
   float isoLine(float v, float stepv) {
@@ -398,8 +453,12 @@
 
     vec3 scr;
     if (uMode == 2) {
-      scr = turbo(th / 70.0);
-      scr = mix(scr, vec3(0.0), 0.55 * isoLine(th, 10.0));
+      float t = clamp(th / 70.0, 0.0, 1.0);
+      if (uBands > 0) t = (min(floor(t * float(uBands)), float(uBands - 1)) + 0.5) / float(uBands);
+      if (uPalFlip) t = 1.0 - t;
+      scr = texture(uPal, vec2(t, 0.5)).rgb;
+      vec3 iso = dot(scr, vec3(0.2126, 0.7152, 0.0722)) > 0.4 ? vec3(0.0) : vec3(1.0);
+      scr = mix(scr, iso, 0.6 * isoLine(th, 10.0));
     } else if (uMode == 1) {
       scr = lin2srgb(lin);
     } else {
@@ -464,7 +523,7 @@
   function bindLUT(id) {
     gl.activeTexture(gl.TEXTURE1);
     if (lutTex[id]) { gl.bindTexture(gl.TEXTURE_2D, lutTex[id].tex); return lutTex[id].width; }
-    const lut = getModel(id).buildLUT();
+    const lut = getLUT(id);
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -473,6 +532,21 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     lutTex[id] = { tex, width: lut.width };
     return lut.width;
+  }
+
+  // 热力图色表放在纹理单元 2
+  gl.uniform1i(screenProg.u.uPal, 2);
+  const palTex = gl.createTexture();
+  function setPaletteTex(name) {
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, palTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, Viz.paletteBytes(name, false));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
   }
 
   const imgTex = gl.createTexture();
@@ -507,8 +581,10 @@
     return ia > da ? [da / ia, 1] : [1, ia / da];
   }
 
+
   // ---------- 渲染 ----------
   function resize() {
+    applyLayout();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(canvas.clientWidth * dpr);
     canvas.height = Math.round(canvas.clientHeight * dpr);
@@ -534,6 +610,7 @@
   }
 
   function render() {
+    applyPalette();
     const M = modelMatrix();
     const ids = S.stereo ? [activeIds()[0], activeIds()[0]] : activeIds();
     computeViews(ids.map((id) => dev(byId(id).device)));
@@ -567,6 +644,9 @@
     gl.useProgram(screenProg.p);
     gl.uniform1f(screenProg.u.uRot, S.rot);
     gl.uniform1i(screenProg.u.uMode, S.mode);
+    const P = Viz.palette(S.pal);
+    gl.uniform1i(screenProg.u.uBands, P.banded ? 7 : 0);
+    gl.uniform1i(screenProg.u.uPalFlip, P.flipAngle ? 1 : 0);
     views.forEach((v, i) => {
       clip(v);
       const d = v.dev, cut = d.spec.cutout;
@@ -585,6 +665,7 @@
 
     updateReadout(M, ids);
     if (hover) updateTip();
+    writeHash();
   }
 
   // ---------- 信息显示 ----------
@@ -614,24 +695,20 @@
     return acc;
   }
 
-  const READ_LABELS = {
-    mono: ['中心亮度', '色偏 JNCD', 'ΔE2000 含亮度'],
-    stereo: ['双眼亮度差', '双眼色度差 JNCD', '双眼 ΔE2000'],
-  };
   function placeCaption(el, v, html) {
-    el.innerHTML = html;
+    if (el._html !== html) { el.innerHTML = html; el._html = html; }
     el.classList.toggle('stereo', S.stereo);
     el.style.width = S.stereo ? v.w - 20 + 'px' : '';
     el.style.display = 'block';
     el.style.left = v.cx + 'px';
-    el.style.top = v.bottomY + 14 + 'px';
+    el.style.top = v.bottomY + 8 + 'px';
   }
   /** 双眼立体时左右两块完全相同的背景框，兼作融合时的零视差参照。 */
   function placeFrames() {
     [0, 1].forEach((i) => {
       const el = $('sf' + i), v = views[i];
       if (!S.stereo || !v) { el.style.display = 'none'; return; }
-      if (i === 1) $('sepInfo').textContent = `两图中心距 ${Math.round(v.cx - views[0].cx)} px`;
+      if (i === 1) $('sepInfo').textContent = `两图中心距 ${Math.round(v.cx - views[0].cx)} px。`;
       Object.assign(el.style, {
         display: 'block', left: v.x0 + 2 + 'px', width: v.w - 4 + 'px',
         top: v.top + 'px', height: v.bottomY - v.top + 100 + 'px',
@@ -639,40 +716,132 @@
     });
   }
 
+  const stat = (val, unit, label) => `<div><b>${val}${unit ? `<small>${unit}</small>` : ''}</b><span>${label}</span></div>`;
+  function capName(p, i) {
+    const key = S.compare ? `<span class="key" style="--k:${SERIES[i]}"></span>` : '';
+    const st = hasPrivacy(p.device) ? `<small>${privacyText(p.device)[p.privacy ? 'on' : 'off']}</small>` : '';
+    return `<div class="cap-name">${key}${p.device}${st}</div>`;
+  }
+
+  /** 屏幕中心对应的 (θ, ψ手机坐标)；θ≈0 时沿用当前方向，保证曲线方向稳定。 */
+  const psiLocal = () => AngleModel.norm360(S.psi + S.rot);
+
   function updateReadout(M, ids) {
-    const c = anglesOf(applyT(M, [0, 0, S.dist]));
-    $('tiltV').textContent = Math.round(c.theta) + '°';
-    document.querySelectorAll('.single-only').forEach((el) => { el.hidden = S.compare; });
     $('distV').textContent = Math.round(S.dist / 10) + ' cm';
-    $('legend').classList.toggle('show', S.mode === 2 && !S.stereo);
-    ['lumL', 'jncdL', 'deL'].forEach((id, i) => { $(id).textContent = READ_LABELS[S.stereo ? 'stereo' : 'mono'][i]; });
+    $('heroTheta').textContent = Math.round(S.theta) + '°';
+    $('heroDir').textContent = S.theta < 0.5 ? '正对屏幕' : `从${Viz.dirName(S.psi)}看`;
+    $('heroSub').textContent = `屏幕中心离轴角 · 观看距离 ${Math.round(S.dist / 10)} cm`;
+    $('legend').classList.toggle('show', S.mode === 2);
+    updatePad(M);
+    updateCharts();
 
     if (S.stereo) {
       const b = binoStats(M, ids[0]);
-      $('lumV').textContent = b.dl.toFixed(1) + '%';
-      $('jncdV').textContent = b.j.toFixed(2);
-      $('deV').textContent = b.de.toFixed(1);
-      const html = `<b>${profileLabel(byId(ids[0]))}</b><br>` +
-        `<span class="dim">双眼差异 · 全屏平均${S.mode === 2 ? ' · 颜色为离轴角 0–70°' : ''}</span><br>` +
-        `<span class="dim">亮度</span> ${b.dl.toFixed(1)}%　<span class="dim">JNCD</span> ${b.j.toFixed(2)}　<span class="dim">ΔE00</span> ${b.de.toFixed(1)}`;
+      const html = capName(byId(ids[0]), 0) +
+        `<div class="cap-stats">${stat(b.dl.toFixed(1), '%', '双眼亮度差')}${stat(b.j.toFixed(2), 'JNCD', '双眼色度差')}${stat(b.de.toFixed(1), '', '双眼 ΔE2000')}</div>` +
+        `<div class="note">全屏平均${S.mode === 2 ? ' · 颜色为离轴角 0–70°' : ''}</div>`;
       [0, 1].forEach((i) => placeCaption($('cap' + i), views[i], html));
       return;
     }
 
-    const ev = ids.map((id) => getModel(id).evalAt(c.theta, c.psi));
-    $('lumV').textContent = Math.round(ev[0].yRatio * 100) + '%';
-    $('jncdV').textContent = ev[0].jncd.toFixed(1);
-    $('deV').textContent = ev[0].de00.toFixed(1);
+    const c = anglesOf(applyT(M, [0, 0, S.dist]));
+    const psi = c.theta < 0.01 ? psiLocal() : c.psi;
     [0, 1].forEach((i) => {
       const el = $('cap' + i), v = views[i];
       if (!v) { el.style.display = 'none'; return; }
-      placeCaption(el, v, `<b>${profileLabel(byId(ids[i]))}</b><br>` +
-        `<span class="dim">亮度</span> ${Math.round(ev[i].yRatio * 100)}%　` +
-        `<span class="dim">JNCD</span> ${ev[i].jncd.toFixed(1)}　` +
-        `<span class="dim">ΔE00</span> ${ev[i].de00.toFixed(1)}`);
+      const e = getModel(ids[i]).evalAt(c.theta, psi);
+      placeCaption(el, v, capName(byId(ids[i]), i) +
+        `<div class="cap-stats">${stat(Math.round(e.yRatio * 100), '%', '亮度')}${stat(e.jncd.toFixed(1), 'JNCD', '色偏')}${stat(e.de00.toFixed(1), '', 'ΔE2000')}</div>`);
     });
   }
 
+  // ---------- 方向盘 ----------
+  const padRead = document.createElement('div');
+  padRead.className = 'pad-read';
+  document.querySelector('#secPad .pad-side').prepend(padRead);
+  const pad = Viz.createPad($('pad'), {
+    maxTheta: MAX_TILT,
+    onInput(theta, psi) { stopSweep(); setView(theta, psi); },
+    onHover(h) { padHover = h; updatePadRead(); },
+  });
+  let padHover = null;
+  // levels：等值线级数（亮度每 10% 一条，色偏每 2 JNCD 一条）
+  const metricFmt = {
+    lum: { t: (v) => v, levels: 10, ticks: ['0%', '50%', '100%'], fmt: (v) => `亮度 ${Math.round(v * 100)}%` },
+    jncd: { t: (v) => v / JMAX, levels: JMAX / 2, ticks: ['0', String(JMAX / 2), JMAX + ' JNCD'], fmt: (v) => `色偏 ${v.toFixed(1)} JNCD` },
+  };
+  $('palette').innerHTML = Object.entries(Viz.PALETTES).map(([k, p]) => `<option value="${k}">${p.label}</option>`).join('');
+  let palApplied = '';
+  function applyPalette() {
+    if (palApplied === S.pal) return;
+    palApplied = S.pal;
+    $('palette').value = S.pal;
+    const P = Viz.palette(S.pal);
+    setPaletteTex(S.pal);
+    $('angRamp').style.background = Viz.paletteCSS(S.pal, P.banded ? 7 : 0, P.flipAngle);
+  }
+  $('palette').addEventListener('change', (e) => { S.pal = e.target.value; requestRender(); });
+
+  function updatePadRead() {
+    const id = activeIds()[0], g = getGrid(id), mf = metricFmt[S.padMetric];
+    const h = padHover || { theta: S.theta, psi: S.psi };
+    const where = h.theta < 0.5 ? '正对' : `${Math.round(h.theta)}° ${Viz.dirName(h.psi)}`;
+    const who = S.compare ? `<span class="key" style="--k:${SERIES[0]}"></span>` : '';
+    const v = g[S.padMetric](h.theta, h.psi + S.rot);
+    padRead.innerHTML = `${who}<span class="dim">${padHover ? '指针处' : '当前'}</span> ${where} · <b>${mf.fmt(v)}</b>`;
+  }
+
+  function updatePad(M) {
+    const id = activeIds()[0], m = getModel(id), g = getGrid(id), mf = metricFmt[S.padMetric];
+    applyPalette();
+    pad.setField(`${id}|${S.padMetric}|${S.pal}`, (th, psi) => mf.t(g[S.padMetric](th, psi)), { pal: S.pal, levels: mf.levels });
+    $('padRamp').style.background = Viz.paletteCSS(S.pal, mf.levels, false);
+    const spokes = m.lines.filter((l) => !l.virtual).map((l) => l.psi);
+    const hatch = [];
+    m.lines.forEach((l, i) => {
+      const n = m.lines[(i + 1) % m.lines.length];
+      if (l.virtual || n.virtual) hatch.push([l.psi, l.psi + (AngleModel.norm360(n.psi - l.psi) || 360)]);
+    });
+    let eyes = null;
+    if (S.stereo) {
+      eyes = [-1, 1].map((s) => {
+        const a = anglesOf(applyT(M, eyePos(s)));
+        return [a.theta, a.psi - S.rot];
+      });
+    }
+    pad.update({ theta: S.theta, psi: S.psi, rot: S.rot, spokes, hatch, eyes });
+    $('padTicks').innerHTML = mf.ticks.map((t) => `<span>${t}</span>`).join('');
+    $('padNote').hidden = !hatch.length;
+    updatePadRead();
+  }
+
+  // ---------- 曲线 ----------
+  const charts = Viz.createCharts($('charts'), {
+    maxTheta: MAX_TILT,
+    onPick(theta) { stopSweep(); setView(theta, S.psi); },
+  });
+  const seriesCache = {};
+  function seriesFor(id, psi) {
+    const key = `${id}|${psi.toFixed(1)}`;
+    if (seriesCache[key]) return seriesCache[key];
+    const m = getModel(id), lum = [], jncd = [];
+    for (let t = 0; t <= MAX_TILT; t++) { const e = m.evalAt(t, psi); lum.push(e.yRatio * 100); jncd.push(e.jncd); }
+    const keys = Object.keys(seriesCache);
+    if (keys.length > 64) keys.slice(0, 32).forEach((k) => delete seriesCache[k]);
+    return (seriesCache[key] = { lum, jncd });
+  }
+  function updateCharts() {
+    const ids = S.stereo ? [activeIds()[0]] : activeIds();
+    const psi = psiLocal();
+    const series = ids.map((id, i) => Object.assign({ label: shortLabel(byId(id)), color: SERIES[i] }, seriesFor(id, psi)));
+    $('curveDir').textContent = `沿${S.theta < 0.5 ? '右侧' : Viz.dirName(S.psi)}方向 · 屏幕中心`;
+    const leg = series.length > 1
+      ? series.map((s) => `<span><i style="--k:${s.color}"></i>${s.label}</span>`).join('') : '';
+    if ($('curveLegend')._html !== leg) { $('curveLegend').innerHTML = leg; $('curveLegend')._html = leg; }
+    charts.update({ series, cursor: S.theta, jMax: JMAX, lMax: Math.max(100, Math.ceil(RANGE.lum * 10) * 10), ph: window.innerHeight < 820 ? 42 : 58 });
+  }
+
+  // ---------- 屏幕悬停读数 ----------
   let hover = null;
   function updateTip() {
     const tips = [$('tip'), $('tip2')];
@@ -717,34 +886,81 @@
     const e = getModel(id).evalAt(a.theta, a.psi);
     tip.innerHTML =
       (S.compare ? `<span class="dim">${profileLabel(byId(id))}</span><br>` : '') +
-      `该处离轴角 <b>${a.theta.toFixed(1)}°</b>${e.clamped ? ' <span class="dim">(超出实测范围)</span>' : ''}<br>` +
+      `此处离轴角 <b>${a.theta.toFixed(1)}°</b>${e.clamped ? ' <span class="warn">超出实测范围，按 70° 计</span>' : ''}<br>` +
       `亮度 <b>${Math.round(e.yRatio * 100)}%</b><br>` +
-      `色偏 <b>${e.jncd.toFixed(1)}</b> JNCD <span class="dim">(Δu′v′ ${e.duv.toFixed(4)})</span><br>` +
-      `ΔE2000 <b>${e.de00.toFixed(1)}</b> <span class="dim">(含亮度)</span>`;
+      `色偏 <b>${e.jncd.toFixed(1)}</b> JNCD <span class="dim">Δu′v′ ${e.duv.toFixed(4)}</span><br>` +
+      `ΔE2000 <b>${e.de00.toFixed(1)}</b> <span class="dim">含亮度</span>`;
     tip.style.display = 'block';
-    tip.style.left = hover.x + 16 + 'px';
-    tip.style.top = hover.y + 16 + 'px';
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    tip.style.left = Math.min(hover.x + 16, innerWidth - tw - 8) + 'px';
+    tip.style.top = Math.min(hover.y + 16, innerHeight - th - 8) + 'px';
   }
 
-  // ---------- 交互 ----------
+  // ---------- 视角状态 ----------
+  /** 由眼睛方向（θ, ψ 观看者坐标：0 右、90 上）设置手机姿态。 */
+  function setView(theta, psi) {
+    theta = Math.min(Math.max(theta, 0), MAX_TILT);
+    S.theta = theta;
+    S.psi = AngleModel.norm360(psi);
+    S.tilt = [-theta * Math.cos(S.psi * DEG), -theta * Math.sin(S.psi * DEG)];
+    syncThetaChips();
+    requestRender();
+  }
+  /** 拖动画面时直接改手机姿态，再反算眼睛方向。 */
   function setTilt(tx, ty) {
     const mag = Math.hypot(tx, ty);
     if (mag > MAX_TILT) { tx *= MAX_TILT / mag; ty *= MAX_TILT / mag; }
     S.tilt = [tx, ty];
+    S.theta = Math.min(mag, MAX_TILT);
+    if (mag > 0.05) S.psi = AngleModel.norm360(Math.atan2(-ty, -tx) / DEG);
+    syncThetaChips();
     requestRender();
+  }
+  function syncThetaChips() {
+    document.querySelectorAll('#thetaChips button').forEach((b) => b.classList.toggle('on', Math.abs(+b.dataset.t - S.theta) < 0.5));
   }
 
   let anim = null;
-  function resetTilt() {
-    const from = S.tilt.slice(), t0 = performance.now();
+  /** 平滑过渡到目标方向（在手机姿态空间里插值）。 */
+  function animateTo(theta, psi, ms = 450) {
     cancelAnimationFrame(anim);
+    const from = S.tilt.slice(), t0 = performance.now();
+    const to = [-theta * Math.cos(psi * DEG), -theta * Math.sin(psi * DEG)];
     const step = (now) => {
-      const k = Math.min(1, (now - t0) / 350), e = 1 - Math.pow(1 - k, 3);
-      setTilt(from[0] * (1 - e), from[1] * (1 - e));
+      const k = Math.min(1, (now - t0) / ms), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+      setTilt(from[0] + (to[0] - from[0]) * e, from[1] + (to[1] - from[1]) * e);
       if (k < 1) anim = requestAnimationFrame(step);
+      else setView(theta, psi);
     };
     anim = requestAnimationFrame(step);
   }
+  const resetTilt = () => { stopSweep(); animateTo(0, S.psi, 350); };
+
+  // 自动扫描：沿当前方向 0° → 70° → 0° 往复
+  const SWEEP_MS = 9000;
+  function startSweep() {
+    cancelAnimationFrame(anim);
+    const psi = S.psi;
+    const ph0 = Math.acos(1 - 2 * Math.min(S.theta / MAX_TILT, 1)) / (2 * Math.PI);
+    S.sweep = { t0: performance.now() - ph0 * SWEEP_MS, psi };
+    $('sweep').classList.add('on');
+    $('sweep').querySelector('.lbl').textContent = '停止';
+    const step = (now) => {
+      if (!S.sweep) return;
+      const ph = ((now - S.sweep.t0) / SWEEP_MS) % 1;
+      setView(MAX_TILT * (1 - Math.cos(ph * 2 * Math.PI)) / 2, S.sweep.psi);
+      S.sweep.raf = requestAnimationFrame(step);
+    };
+    S.sweep.raf = requestAnimationFrame(step);
+  }
+  function stopSweep() {
+    if (!S.sweep) return;
+    cancelAnimationFrame(S.sweep.raf);
+    S.sweep = null;
+    $('sweep').classList.remove('on');
+    $('sweep').querySelector('.lbl').textContent = '扫描';
+  }
+  const toggleSweep = () => (S.sweep ? stopSweep() : startSweep());
 
   function setDist(cm) {
     cm = Math.min(Math.max(cm, 10), 100);
@@ -753,17 +969,78 @@
     requestRender();
   }
 
+  let toastTimer = 0;
+  function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+  }
+
+  // ---------- 布局 ----------
+  const SECS = [...document.querySelectorAll('#panelBody .sec')];
+  function applyLayout() {
+    const W = window.innerWidth, H = window.innerHeight;
+    const L = W >= 1180 && H >= 600 ? 'wide' : W > 760 ? 'side' : 'sheet';
+    const body = document.body;
+    body.dataset.layout = L;
+    const hud = $('hud'), rail = $('rail'), pb = $('panelBody');
+    if (L === 'wide' && !S.clean) {
+      if (hud.parentElement !== rail) rail.prepend(hud);
+      SECS.forEach((s) => (s.dataset.tab === 'view' && s.dataset.wide !== 'panel' ? rail : pb).appendChild(s));
+      pb.insertBefore($('secDist'), $('secHelp'));
+    } else {
+      if (hud.parentElement !== body) body.insertBefore(hud, rail);
+      SECS.forEach((s) => pb.appendChild(s));
+    }
+    applyTab();
+  }
+  function applyTab() {
+    SECS.forEach((s) => s.classList.toggle('tab-on', s.dataset.tab === S.tab));
+    document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === S.tab));
+  }
+  $('tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) {   // 点抽屉把手：收起 / 展开
+      if (document.body.dataset.layout === 'sheet') { document.body.classList.toggle('sheet-min'); requestRender(); }
+      return;
+    }
+    const sheet = document.body.dataset.layout === 'sheet';
+    if (sheet && b.dataset.tab === S.tab) document.body.classList.toggle('sheet-min');
+    else document.body.classList.remove('sheet-min');
+    S.tab = b.dataset.tab;
+    applyTab();
+    $('panelBody').scrollTop = 0;
+    requestAnimationFrame(() => { pad.draw(); charts.render(); requestRender(); });
+  });
+  function setClean(on) {
+    S.clean = on;
+    document.body.classList.toggle('clean', on);
+    applyLayout();
+    if (on) toast('已隐藏界面 · 按 H 恢复');
+    requestRender();
+  }
+
+  // ---------- 交互 ----------
+  // 首次打开时的操作提示，第一次交互或 10 秒后淡出
+  const hint = $('hint');
+  const hideHint = () => hint.classList.add('gone');
+  setTimeout(hideHint, 10000);
+  ['pointerdown', 'wheel', 'keydown'].forEach((ev) => window.addEventListener(ev, hideHint, { once: true, passive: true }));
+
   let drag = null;
   canvas.addEventListener('pointerdown', (e) => {
     cancelAnimationFrame(anim);
+    stopSweep();
     drag = { x: e.clientX, y: e.clientY };
     canvas.setPointerCapture(e.pointerId);
     canvas.classList.add('dragging');
   });
   canvas.addEventListener('pointermove', (e) => {
-    hover = { x: e.clientX, y: e.clientY };
+    hover = e.pointerType === 'mouse' ? { x: e.clientX, y: e.clientY } : null;
     if (drag) {
-      const k = 0.3;
+      const k = 0.25;
       setTilt(S.tilt[0] + (e.clientX - drag.x) * k, S.tilt[1] - (e.clientY - drag.y) * k);
       drag = { x: e.clientX, y: e.clientY };
     } else {
@@ -780,31 +1057,54 @@
     setDist((S.dist / 10) * Math.exp(e.deltaY * 0.001));
   }, { passive: false });
   window.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT') return;
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = { ArrowLeft: [-2, 0], ArrowRight: [2, 0], ArrowUp: [0, 2], ArrowDown: [0, -2] }[e.key];
-    if (k) { e.preventDefault(); setTilt(S.tilt[0] + k[0], S.tilt[1] + k[1]); }
+    if (k) { e.preventDefault(); stopSweep(); setTilt(S.tilt[0] + k[0], S.tilt[1] + k[1]); return; }
+    switch (e.key) {
+      case ' ':
+        // 让空格只控制扫描，不再触发当前聚焦的按钮
+        e.preventDefault();
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        toggleSweep();
+        break;
+      case '0': case 'Escape': resetTilt(); break;
+      case 'h': case 'H': setClean(!S.clean); break;
+      case 'p': case 'P':
+        if (!S.compare && hasPrivacy(S.device)) { S.privacy = !S.privacy; syncProfileUI(); requestRender(); toast(profileLabel(byId(activeIds()[0]))); }
+        break;
+      default:
+    }
   });
 
   $('dist').addEventListener('input', (e) => setDist(+e.target.value));
-  $('reset').addEventListener('click', resetTilt);
+  $('sweep').addEventListener('click', toggleSweep);
+  $('thetaChips').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    stopSweep();
+    animateTo(+b.dataset.t, S.psi);
+  });
 
   function bindSeg(id, fn) {
     $(id).addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
-      $(id).querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
       fn(b.dataset.v);
+      syncSeg(id, b.dataset.v);
     });
   }
+  const syncSeg = (id, v) => $(id).querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.v === String(v)));
   bindSeg('mode', (v) => { S.mode = +v; requestRender(); });
   bindSeg('orient', (v) => { S.rot = +v; if (S.pattern) loadPattern(S.pattern); requestRender(); });
+  bindSeg('padMetric', (v) => { S.padMetric = v; requestRender(); });
+
   function renderSwatches() {
     const names = activeDevices();
     $('colors').innerHTML = names.map((n) => {
       const cur = colorOf(n).id;
       const label = names.length > 1 ? `<span class="sw-label">${n}</span>` : '';
       const btns = specOf(n).colors.map((c) =>
-        `<button data-v="${c.id}" title="${c.name}" style="--c:${c.swatch}"${c.id === cur ? ' class="on"' : ''}></button>`).join('');
+        `<button data-v="${c.id}" title="${c.name}" aria-label="${c.name}" style="--c:${c.swatch}"${c.id === cur ? ' class="on"' : ''}></button>`).join('');
       return `<div class="swatches" data-d="${n}">${label}${btns}</div>`;
     }).join('');
   }
@@ -813,18 +1113,72 @@
     if (!b) return;
     S.colors[b.parentElement.dataset.d] = b.dataset.v;
     renderSwatches();
+    renderDevCards();
+    requestRender();
+  });
+
+  function renderDevCards() {
+    $('devCards').innerHTML = DEVICES.map((d) => {
+      const k = specKey(d) || d, suffix = d.slice(k.length).trim();
+      const t = privacyText(d);
+      const sub = hasPrivacy(d) ? `${t.off} / ${t.on} 两组实测` : '一组实测';
+      return `<button class="dev-card${d === S.device ? ' on' : ''}" data-d="${d}">` +
+        `<span class="ph" style="--c1:${colorOf(d).swatch}"></span>` +
+        `<span><b>${k}${suffix ? `<span class="badge" title="屏幕版本">${suffix}</span>` : ''}</b><small>${sub}</small></span></button>`;
+    }).join('');
+  }
+  $('devCards').addEventListener('click', (e) => {
+    const b = e.target.closest('.dev-card');
+    if (!b) return;
+    S.device = b.dataset.d;
+    syncProfileUI();
+    requestRender();
+  });
+
+  // 对比的快捷组合：两台机型之间、同一机型防窥前后
+  const PRESETS = (() => {
+    const out = [];
+    for (let i = 0; i < DEVICES.length; i++) for (let j = i + 1; j < DEVICES.length; j++) {
+      out.push({ label: `${shortName(DEVICES[i])} vs ${shortName(DEVICES[j])}`, slots: [pick(DEVICES[i]).id, pick(DEVICES[j]).id] });
+    }
+    for (const d of DEVICES) {
+      if (!hasPrivacy(d)) continue;
+      out.push({ label: `${shortName(d)} ${privacyText(d).short}前后`, slots: [variant(d, false).id, variant(d, true).id] });
+    }
+    for (let i = 0; i < DEVICES.length; i++) for (let j = i + 1; j < DEVICES.length; j++) {
+      if (hasPrivacy(DEVICES[i]) && hasPrivacy(DEVICES[j])) {
+        out.push({ label: `${shortName(DEVICES[i])} vs ${shortName(DEVICES[j])} · 防窥`, slots: [variant(DEVICES[i], true).id, variant(DEVICES[j], true).id] });
+      }
+    }
+    return out;
+  })();
+  $('presets').innerHTML = PRESETS.map((p, i) => `<button data-i="${i}">${p.label}</button>`).join('');
+  $('presets').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    S.slots = PRESETS[+b.dataset.i].slots.slice();
+    syncProfileUI();
     requestRender();
   });
 
   function syncProfileUI() {
-    $('privacyRow').style.display = hasPrivacy(S.device) ? '' : 'none';
+    const showPriv = !S.compare && hasPrivacy(S.device);
+    $('privacyRow').hidden = !showPriv;
     $('privacyText').textContent = privacyText(S.device).switch;
+    $('privacyHint').textContent = privacyText(S.device).hint;
     $('privacy').checked = !!(variant(S.device, S.privacy) || {}).privacy;
-    $('single').hidden = S.compare;
-    $('slots').hidden = !S.compare;
+    $('secDevice').hidden = S.compare;
+    $('secSlots').hidden = !S.compare;
     $('stereoGroup').hidden = !S.stereo;
+    [0, 1].forEach((i) => { $('slot' + i).value = S.slots[i]; });
+    document.querySelectorAll('#presets button').forEach((b) => {
+      const p = PRESETS[+b.dataset.i];
+      b.classList.toggle('on', p.slots[0] === S.slots[0] && p.slots[1] === S.slots[1]);
+    });
+    syncSeg('compare', S.stereo ? 2 : S.compare ? 1 : 0);
     document.body.classList.toggle('stereo', S.stereo);
     document.title = `可视角度仿真 · ${activeDevices().join(' vs ')}`;
+    renderDevCards();
     renderSwatches();
     if (S.pattern) loadPattern(S.pattern);
   }
@@ -833,16 +1187,9 @@
   [0, 1].forEach((i) => {
     const sel = $('slot' + i);
     sel.innerHTML = options;
-    sel.value = S.slots[i];
     sel.addEventListener('change', () => { S.slots[i] = sel.value; syncProfileUI(); requestRender(); });
   });
-  if (DEVICES.length > 1) {
-    $('device').hidden = false;
-    $('device').innerHTML = DEVICES.map((d) => `<option>${d}</option>`).join('');
-    $('device').value = S.device;
-    $('device').addEventListener('change', (e) => { S.device = e.target.value; syncProfileUI(); requestRender(); });
-  }
-  $('privacy').addEventListener('change', (e) => { S.privacy = e.target.checked; requestRender(); });
+  $('privacy').addEventListener('change', (e) => { S.privacy = e.target.checked; syncProfileUI(); requestRender(); });
   bindSeg('compare', (v) => { S.compare = v === '1'; S.stereo = v === '2'; syncProfileUI(); requestRender(); });
   bindSeg('stereoView', (v) => { S.cross = v === '1'; requestRender(); });
   $('size').addEventListener('input', (e) => { S.size = e.target.value / 100; $('sizeV').textContent = e.target.value + '%'; requestRender(); });
@@ -856,7 +1203,8 @@
     const w = S.rot === 90 ? sc.resH : sc.resW, h = S.rot === 90 ? sc.resW : sc.resH;
     const key = `${name}:${w}x${h}`;
     S.pattern = name;
-    document.querySelectorAll('#patterns button').forEach((b) => b.classList.toggle('on', b.dataset.p === name));
+    document.querySelectorAll('#patterns [data-p]').forEach((b) => b.classList.toggle('on', b.dataset.p === name));
+    document.querySelector('#patterns .upload').classList.remove('on');
     if (key === patternKey && !force) return;
     patternKey = key;
     setImage(Patterns.make(name, w, h));
@@ -871,10 +1219,12 @@
     bmp.close();
     S.pattern = null;
     patternKey = '';
-    document.querySelectorAll('#patterns button').forEach((b) => b.classList.remove('on'));
+    document.querySelectorAll('#patterns [data-p]').forEach((b) => b.classList.remove('on'));
+    document.querySelector('#patterns .upload').classList.add('on');
     setImage(cv);
+    toast(`已载入 ${file.name || '图片'}`);
   }
-  $('patterns').addEventListener('click', (e) => { if (e.target.dataset.p) loadPattern(e.target.dataset.p); });
+  $('patterns').addEventListener('click', (e) => { const b = e.target.closest('[data-p]'); if (b) loadPattern(b.dataset.p); });
   $('file').addEventListener('change', (e) => loadFile(e.target.files[0]));
 
   let dragDepth = 0;
@@ -890,24 +1240,61 @@
     if (item) loadFile(item.getAsFile());
   });
 
-  (function legend() {
-    const stops = [];
-    for (let i = 0; i <= 10; i++) {
-      const x = i / 10, v4 = [1, x, x * x, x * x * x], v2 = [x ** 4, x ** 5];
-      const dot = (a, b) => a.reduce((s, q, j) => s + q * b[j], 0);
-      const c = [
-        dot(v4, [0.13572138, 4.6153926, -42.66032258, 132.13108234]) + dot(v2, [-152.94239396, 59.28637943]),
-        dot(v4, [0.09140261, 2.19418839, 4.84296658, -14.18503333]) + dot(v2, [4.27729857, 2.82956604]),
-        dot(v4, [0.1066733, 12.64194608, -60.58204836, 110.36276771]) + dot(v2, [-89.90310912, 27.34824973]),
-      ].map((q) => Math.round(Math.min(Math.max(q, 0), 1) * 255));
-      stops.push(`rgb(${c}) ${i * 10}%`);
-    }
-    document.querySelector('#legend .bar').style.background = `linear-gradient(90deg,${stops.join(',')})`;
-  })();
+  // ---------- 地址栏保存状态（便于收藏 / 分享同一个画面） ----------
+  let hashTimer = 0, hashReady = false;
+  function writeHash() {
+    if (!hashReady) return;
+    clearTimeout(hashTimer);
+    hashTimer = setTimeout(() => {
+      const q = new URLSearchParams();
+      q.set('dev', DEVICES.indexOf(S.device));
+      if (S.privacy) q.set('pv', 1);
+      if (S.compare || S.stereo) q.set('cmp', S.stereo ? 2 : 1);
+      if (S.compare) q.set('ab', S.slots.join(','));
+      q.set('t', Math.round(S.theta * 10) / 10);
+      q.set('p', Math.round(S.psi));
+      q.set('d', Math.round(S.dist / 10));
+      if (S.pattern && S.pattern !== 'ui') q.set('img', S.pattern);
+      if (S.mode) q.set('m', S.mode);
+      if (S.rot) q.set('rot', S.rot);
+      if (S.padMetric !== 'lum') q.set('k', S.padMetric);
+      if (S.pal !== 'jet') q.set('pal', S.pal);
+      try { history.replaceState(null, '', '#' + q.toString()); } catch (err) { /* file:// 下个别浏览器不允许 */ }
+    }, 300);
+  }
+  function readHash() {
+    const q = new URLSearchParams(location.hash.slice(1));
+    const num = (k, d) => (q.has(k) && isFinite(+q.get(k)) ? +q.get(k) : d);
+    const di = num('dev', 0);
+    if (DEVICES[di]) S.device = DEVICES[di];
+    S.privacy = num('pv', 0) === 1;
+    const cmp = num('cmp', 0);
+    S.compare = cmp === 1; S.stereo = cmp === 2;
+    const ab = (q.get('ab') || '').split(',');
+    if (ab.length === 2 && ab.every(byId)) S.slots = ab;
+    S.dist = Math.min(Math.max(num('d', 30), 10), 100) * 10;
+    if (q.has('img') && /^(ui|dark|read|white|rgbw|checker|gray)$/.test(q.get('img'))) S.pattern = q.get('img');
+    S.mode = [0, 1, 2].includes(num('m', 0)) ? num('m', 0) : 0;
+    S.rot = num('rot', 0) === 90 ? 90 : 0;
+    if (q.get('k') === 'jncd') S.padMetric = 'jncd';
+    if (Viz.PALETTES[q.get('pal')]) S.pal = q.get('pal');
+    setView(num('t', 0), num('p', 0));
+    syncSeg('mode', S.mode); syncSeg('orient', S.rot); syncSeg('padMetric', S.padMetric);
+  }
 
+  // ---------- 启动 ----------
   window.addEventListener('resize', resize);
+  readHash();
   setDist(S.dist / 10);
   syncProfileUI();
   Patterns.ready.then(() => { if (S.pattern) loadPattern(S.pattern, true); });
+  if ('ResizeObserver' in window) {
+    const ro = new ResizeObserver(() => { pad.draw(); charts.render(); });
+    ro.observe($('pad')); ro.observe($('charts'));
+  }
   resize();
+  hashReady = true;
+
+  // 调试 / 截图用
+  window.viewAngle = { S, setView, animateTo, setClean, setDist, getModel, render: () => render() };
 })();

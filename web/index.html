@@ -2,116 +2,202 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
 <title>可视角度仿真</title>
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
-<body>
+<body data-layout="wide">
 <div class="sframe" id="sf0"></div>
 <div class="sframe" id="sf1"></div>
-<canvas id="gl"></canvas>
+<canvas id="gl" aria-label="手机屏幕可视角仿真画面"></canvas>
 
-<header>
-  <h1>可视角度仿真</h1>
-  <p>根据实测数据仿真</p>
+<!-- 宽屏时整体移入左栏；其他布局时浮在舞台左上角 -->
+<header id="hud">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>可视角度仿真
+    <span class="tag">实测数据</span>
+  </div>
+  <div class="hero">
+    <span class="hero-num" id="heroTheta">0°</span>
+    <span class="hero-dir" id="heroDir">正对屏幕</span>
+  </div>
+  <div class="hero-sub" id="heroSub">屏幕中心离轴角</div>
 </header>
 
-<aside id="panel">
-  <div class="readout">
-    <div><span class="big" id="tiltV">0°</span><label>偏转角度</label></div>
-    <div class="single-only"><span class="big" id="lumV">100%</span><label id="lumL">中心亮度</label></div>
-    <div class="single-only"><span class="big" id="jncdV">0.0</span><label id="jncdL">色偏 JNCD</label></div>
-    <div class="single-only"><span class="big" id="deV">0.0</span><label id="deL">ΔE2000 含亮度</label></div>
-  </div>
+<aside id="rail" aria-label="视角"></aside>
 
-  <div class="group">
-    <div class="seg" id="compare">
-      <button data-v="0" class="on">单台</button>
-      <button data-v="1">双机对比</button>
-      <button data-v="2">双眼立体</button>
-    </div>
-    <div id="single">
-      <select id="device" hidden></select>
-      <label class="switch-row" id="privacyRow"><span id="privacyText">防窥模式</span>
+<aside id="panel" aria-label="设置">
+  <nav id="tabs" role="tablist">
+    <button data-tab="view" class="on" role="tab">视角</button>
+    <button data-tab="device" role="tab">机型</button>
+    <button data-tab="screen" role="tab">画面</button>
+    <span class="tabs-fold" aria-hidden="true"></span>
+  </nav>
+  <div id="panelBody">
+
+    <!-- ===== 视角 ===== -->
+    <section class="sec" data-tab="view" id="secPad">
+      <div class="sec-head">
+        <h2>观看方向</h2>
+        <div class="seg mini" id="padMetric">
+          <button data-v="lum" class="on">亮度</button>
+          <button data-v="jncd">色偏</button>
+        </div>
+      </div>
+      <div class="pad-grid">
+        <div class="pad-wrap">
+          <canvas id="pad" aria-label="观看方向：拖动设置眼睛相对屏幕的位置"></canvas>
+        </div>
+        <div class="pad-side">
+          <div class="pad-legend">
+            <div class="pad-scale">
+              <div class="ramp" id="padRamp"></div>
+              <div class="ramp-ticks" id="padTicks"></div>
+            </div>
+            <select id="palette" class="mini-select" aria-label="热力图配色" title="热力图配色（方向盘与离轴角分布共用）"></select>
+          </div>
+          <p class="note" id="padNote"><span class="hatch-key"></span>斜线区无实测，上下镜像补全</p>
+          <div class="angle-row">
+            <div class="chips" id="thetaChips">
+              <button data-t="0">0°</button>
+              <button data-t="30">30°</button>
+              <button data-t="45">45°</button>
+              <button data-t="60">60°</button>
+              <button data-t="70">70°</button>
+            </div>
+            <button id="sweep" class="play" title="自动扫描 0°→70°（空格）"><span class="ico"></span><span class="lbl">扫描</span></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" data-tab="view" data-wide="panel" id="secDist">
+      <div class="row-title"><span>观看距离</span><b id="distV">30 cm</b></div>
+      <input type="range" id="dist" min="10" max="100" step="1" value="30" aria-label="观看距离">
+    </section>
+
+    <section class="sec" data-tab="view" id="secCurve">
+      <div class="sec-head">
+        <h2>随离轴角变化</h2>
+        <span class="sec-aside" id="curveDir">沿当前方向</span>
+      </div>
+      <div class="legend-row" id="curveLegend"></div>
+      <div id="charts"></div>
+    </section>
+
+    <!-- ===== 机型 ===== -->
+    <section class="sec" data-tab="device" id="secMode">
+      <div class="seg" id="compare">
+        <button data-v="0" class="on">单台</button>
+        <button data-v="1">双机对比</button>
+        <button data-v="2">双眼立体</button>
+      </div>
+    </section>
+
+    <section class="sec" data-tab="device" id="secDevice">
+      <h2>机型</h2>
+      <div class="dev-cards" id="devCards"></div>
+      <label class="switch-row" id="privacyRow">
+        <span><span id="privacyText">防窥模式</span><small id="privacyHint"></small></span>
         <input type="checkbox" id="privacy"><span class="switch"></span>
       </label>
-    </div>
-    <div id="slots" hidden>
-      <label class="slot">左 <select id="slot0"></select></label>
-      <label class="slot">右 <select id="slot1"></select></label>
-    </div>
-  </div>
+    </section>
 
-  <div class="group" id="stereoGroup" hidden>
-    <div class="seg" id="stereoView">
-      <button data-v="0" class="on">平行视（纸卡隔开）</button>
-      <button data-v="1">交叉视</button>
-    </div>
-    <div class="title">画面大小 <b id="sizeV">100%</b></div>
-    <input type="range" id="size" min="40" max="100" step="5" value="100">
-    <div class="title">中间间隙 <b id="gapV">8 px</b></div>
-    <input type="range" id="gap" min="0" max="200" step="2" value="8">
-    <div class="title">瞳距 <b id="ipdV">63 mm</b></div>
-    <input type="range" id="ipd" min="54" max="72" step="1" value="63">
-    <p class="hint"><span id="sepInfo"></span><br>左图为左眼、右图为右眼所见（交叉视时对调）。在两图之间竖一张纸卡隔开双眼，放松眼睛让两图重合；融合困难时缩小画面或减小间隙。</p>
-  </div>
+    <section class="sec" data-tab="device" id="secSlots" hidden>
+      <h2>对比组合</h2>
+      <div class="chips" id="presets"></div>
+      <label class="slot"><span class="key" style="--k:var(--s1)"></span><select id="slot0" aria-label="左侧"></select></label>
+      <label class="slot"><span class="key" style="--k:var(--s2)"></span><select id="slot1" aria-label="右侧"></select></label>
+    </section>
 
-  <div class="group">
-    <div class="title">观看距离 <b id="distV">30 cm</b></div>
-    <input type="range" id="dist" min="10" max="100" step="1" value="30">
-  </div>
+    <section class="sec" data-tab="device" id="stereoGroup" hidden>
+      <h2>双眼立体</h2>
+      <div class="seg" id="stereoView">
+        <button data-v="0" class="on">平行视</button>
+        <button data-v="1">交叉视</button>
+      </div>
+      <div class="row-title"><span>画面大小</span><b id="sizeV">100%</b></div>
+      <input type="range" id="size" min="40" max="100" step="5" value="100">
+      <div class="row-title"><span>中间间隙</span><b id="gapV">8 px</b></div>
+      <input type="range" id="gap" min="0" max="200" step="2" value="8">
+      <div class="row-title"><span>瞳距</span><b id="ipdV">63 mm</b></div>
+      <input type="range" id="ipd" min="54" max="72" step="1" value="63">
+      <p class="note"><span id="sepInfo"></span>　左图为左眼、右图为右眼所见（交叉视时对调）。平行视时在两图之间竖一张纸卡隔开双眼，放松眼睛让两图重合；融合困难时缩小画面或减小间隙。</p>
+    </section>
 
-  <div class="group">
-    <div class="title">画面</div>
-    <div class="chips" id="patterns">
-      <button data-p="ui" class="on">浅色界面</button>
-      <button data-p="dark">深色界面</button>
-      <button data-p="white">纯白</button>
-      <button data-p="checker">色卡</button>
-      <button data-p="gray">灰阶</button>
-      <label class="upload">上传图片<input type="file" id="file" accept="image/*"></label>
-    </div>
-  </div>
+    <section class="sec" data-tab="device" id="secColors">
+      <h2>机身颜色</h2>
+      <div id="colors"></div>
+    </section>
 
-  <div class="group">
-    <div class="title">显示</div>
-    <div class="seg" id="mode">
-      <button data-v="0" class="on">真实效果</button>
-      <button data-v="1">原图</button>
-      <button data-v="2">角度分布</button>
-    </div>
-    <div class="seg" id="orient">
-      <button data-v="0" class="on">竖屏</button>
-      <button data-v="90">横屏</button>
-    </div>
-  </div>
+    <!-- ===== 画面 ===== -->
+    <section class="sec" data-tab="screen" id="secPattern">
+      <h2>屏幕内容</h2>
+      <div class="chips" id="patterns">
+        <button data-p="ui" class="on">浅色设置</button>
+        <button data-p="dark">深色设置</button>
+        <button data-p="read">阅读</button>
+        <button data-p="white">纯白</button>
+        <button data-p="rgbw">三原色</button>
+        <button data-p="checker">色卡</button>
+        <button data-p="gray">灰阶</button>
+        <label class="upload">上传…<input type="file" id="file" accept="image/*"></label>
+      </div>
+      <p class="note">也可以把图片直接拖进窗口或粘贴。</p>
+    </section>
 
-  <div class="group">
-    <div class="title">机身颜色</div>
-    <div id="colors"></div>
-  </div>
+    <section class="sec" data-tab="screen" id="secDisplay">
+      <h2>显示方式</h2>
+      <div class="seg" id="mode">
+        <button data-v="0" class="on">仿真效果</button>
+        <button data-v="1">原图</button>
+        <button data-v="2">离轴角分布</button>
+      </div>
+      <div id="legend">
+        <div class="ramp" id="angRamp"></div>
+        <div class="ramp-ticks"><span>0°</span><span>35°</span><span>70°</span></div>
+        <p class="note">屏幕上每一点相对眼睛的离轴角，细线为每 10° 等角线。</p>
+      </div>
+      <div class="seg" id="orient">
+        <button data-v="0" class="on">竖屏</button>
+        <button data-v="90">横屏</button>
+      </div>
+    </section>
 
-  <button id="reset" class="wide">回到正对屏幕</button>
+    <section class="sec" data-tab="screen" id="secHelp">
+      <details class="keys-box">
+      <summary>快捷键</summary>
+      <dl class="keys">
+        <dt>拖动画面</dt><dd>转动手机</dd>
+        <dt>滚轮</dt><dd>观看距离</dd>
+        <dt>方向键</dt><dd>微调 2°</dd>
+        <dt>空格</dt><dd>自动扫描</dd>
+        <dt>H</dt><dd>隐藏界面（录屏）</dd>
+        <dt>双击 / 0</dt><dd>回到正对</dd>
+        <dt>P</dt><dd>防窥开关</dd>
+      </dl>
+      </details>
+    </section>
+
+  </div>
 </aside>
 
-<div id="tip"></div>
+<div id="tip" role="status"></div>
 <div id="tip2"></div>
 <div class="caption" id="cap0"></div>
 <div class="caption" id="cap1"></div>
-<div id="legend">
-  <div class="bar"></div>
-  <div class="ticks"><span>0°</span><span>35°</span><span>70°</span></div>
-  <div class="cap">像素相对眼睛的离轴角</div>
-</div>
-<footer>拖动旋转 · 滚轮调节距离 · 双击复位 · 可直接拖入或粘贴图片</footer>
+<div id="toast"></div>
+<div id="hint">拖动画面转动手机 · 拖动左侧方向盘直接选角度 · 滚轮调距离 · 空格自动扫描</div>
 <div id="drop">松开以加载图片</div>
 
 <script src="data.js"></script>
-<script src="model.js?v=3"></script>
+<script src="model.js?v=12"></script>
 <script src="avatar.js"></script>
-<script src="patterns.js"></script>
+<script src="patterns.js?v=12"></script>
 <script src="devices.js"></script>
 <script src="phone3d.js"></script>
-<script src="app.js?v=6"></script>
+<script src="viz.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

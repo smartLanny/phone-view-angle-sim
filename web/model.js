@@ -93,7 +93,8 @@
    * @param data   window.ANG_DATA
    * @param opts.rotation  'cw'  : 面内旋转 φ 为从屏幕正面看顺时针；'ccw' 反之
    * @param opts.positive  'right': φ=0 时 +θ 表示观察者位于手机右侧；'left' 反之
-   * @param opts.fill      'interp': 无测量的象限直接按方位角线性插值；'mirror': 用左右镜像(u→−u)补线
+   * @param opts.fill      'interp': 无测量的象限直接按方位角插值；'mirror': 用左右镜像(u→−u)补线；
+   *                       'vmirror': 用上下镜像(v→−v)补线
    */
   function createModel(data, opts) {
     opts = Object.assign({ rotation: 'cw', positive: 'right', fill: 'interp' }, opts || {});
@@ -134,9 +135,13 @@
       lines.push({ psi: psiPos, set: si, sign: 1, virtual: false });
       lines.push({ psi: norm360(psiPos + 180), set: si, sign: -1, virtual: false });
     });
-    if (opts.fill === 'mirror') {
+    // 'mirror'  : 左右镜像 ψ → 180° − ψ
+    // 'vmirror' : 上下镜像 ψ → −ψ。φ = 90° 一组上下几乎对称，用它补全无实测的两个象限，
+    //             比直接沿方位角插值跨过 90° 空缺更可信（后者偏亮）；且结果与面内旋转方向约定无关。
+    const mirrorOf = { mirror: (p) => 180 - p, vmirror: (p) => -p }[opts.fill];
+    if (mirrorOf) {
       for (const l of lines.filter((x) => !x.virtual)) {
-        const m = norm360(180 - l.psi);
+        const m = norm360(mirrorOf(l.psi));
         if (!lines.some((o) => angDist(o.psi, m) < 0.5)) lines.push(Object.assign({}, l, { psi: m, virtual: true }));
       }
     }
