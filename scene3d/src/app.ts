@@ -238,7 +238,8 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       <div class="s3d-note" data-k="note"></div>
       <div class="s3d-warn" data-k="warn"></div>
     </div>
-    <div class="s3d-inset" data-k="inset"><div class="s3d-inset-cap" data-k="insetCap"></div></div>
+    <div class="s3d-inset" data-k="insetNb" data-who="nb"><div class="s3d-inset-cap"></div></div>
+    <div class="s3d-inset" data-k="insetYou" data-who="you"><div class="s3d-inset-cap"></div></div>
     <div class="s3d-adjust" data-k="adjust" hidden></div>
     <div class="s3d-toast" data-k="toast" role="status"></div>
     <div class="s3d-tl" data-k="tl" hidden></div>
@@ -656,11 +657,15 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
 
   // ---------- 渲染 ----------
   const insetCam = new THREE.PerspectiveCamera(42, 0.8, 0.01, 30);
-  const insetCv = document.createElement('canvas');
-  insetCv.className = 's3d-inset-cv';
-  $('inset').prepend(insetCv);
-  const insetG = insetCv.getContext('2d')!;
-  let insetAlpha = 0, insetRect: [number, number, number, number] = [0, 0, 1, 1];
+  // 地铁场景的两个小窗：上面是旁人看到的、下面是你看到的（各自用自己的眼睛对同一部手机渲染）
+  const insets = (['nb', 'you'] as Viewer[]).map((who) => {
+    const el = $(who === 'nb' ? 'insetNb' : 'insetYou');
+    const cv = document.createElement('canvas');
+    cv.className = 's3d-inset-cv';
+    el.prepend(cv);
+    return { who, el, cv, g: cv.getContext('2d')!, cap: el.querySelector('.s3d-inset-cap') as HTMLElement, rect: [0, 0, 1, 1] as [number, number, number, number] };
+  });
+  let insetAlpha = 0;
   let uiK = 1;
   const applyScale = () => {
     const { W, H } = size();
@@ -783,39 +788,46 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       });
       u.uEye.value.copy(mainEye).applyMatrix4(inv);
     }
-    // 地铁场景：角落小窗，用另一个人的眼睛对同一部手机再渲染一次
-    const insetOn = !!(sub && otherEye && !stereoOn);
-    if (insetOn && otherEye && eyeNb) {
+    // 地铁场景：右侧两个小窗，旁人看到的、你看到的各渲染一次（先画到画布左下角再拷到小窗自己的画布，之后主画面会把那一块盖掉）
+    const insetOn = !!(sub && eyeNb && !stereoOn);
+    if (insetOn && eyeNb) {
       const narrow = W < 700;
-      const big = rig.mode === 'eye';
-      const iw = Math.round(Math.min((big ? 360 : 300) * uiK, W * (narrow ? 0.3 : big ? 0.24 : 0.2))), ih = Math.round(iw * 1.25);
-      insetRect = [W - iw - (narrow ? 10 : 24 * uiK), narrow ? 62 : 72 * uiK, iw, ih];
-      insetCam.position.copy(otherEye);
-      insetCam.up.copy(up);
-      insetCam.lookAt(scr);
-      insetCam.aspect = iw / ih;
-      insetCam.fov = fitFov(otherEye, 0.8);
-      insetCam.updateProjectionMatrix();
-      insetCam.updateMatrixWorld();
-      u.uEye.value.copy(otherEye).applyMatrix4(inv);
-      const otherIsYou = mainViewer === 'nb';
-      lookYou.setHead(headOf(you, eyeYou), insetCam, otherIsYou ? 1 : 0);
-      lookNb.setHead(headOf(nb, eyeNb), insetCam, otherIsYou ? 0 : 1);
-      ann.setVisible(false);
+      const top = narrow ? 112 : 72 * uiK, capH = narrow ? 36 : 26 * uiK, gap = (narrow ? 8 : 12) * uiK, bottomRes = narrow ? 140 : 100 * uiK;
+      let iw = Math.round(Math.min(280 * uiK, W * (narrow ? 0.3 : 0.2))), ih = Math.round(iw * 1.25);
+      const maxIh = Math.floor((H - top - bottomRes - 2 * capH - gap) / 2);
+      if (ih > maxIh) { ih = Math.max(60, maxIh); iw = Math.round(ih / 1.25); }
+      const x = W - iw - (narrow ? 10 : 24 * uiK);
       const pr = renderer.getPixelRatio(), iwPx = Math.round(iw * pr), ihPx = Math.round(ih * pr);
-      renderer.setScissorTest(true);
-      renderer.setScissor(0, 0, iw, ih);
-      renderer.setViewport(0, 0, iw, ih);
-      renderer.render(scene, insetCam);
-      renderer.setScissorTest(false);
-      renderer.setViewport(0, 0, W, H);
-      if (insetCv.width !== iwPx || insetCv.height !== ihPx) { insetCv.width = iwPx; insetCv.height = ihPx; }
-      insetG.drawImage(renderer.domElement, 0, renderer.domElement.height - ihPx, iwPx, ihPx, 0, 0, iwPx, ihPx);
+      ann.setVisible(false);
+      insets.forEach((it, i) => {
+        const eyeP = it.who === 'nb' ? eyeNb : eyeYou;
+        it.rect = [x, top + i * (ih + capH + gap), iw, ih];
+        insetCam.position.copy(eyeP);
+        insetCam.up.copy(up);
+        insetCam.lookAt(scr);
+        insetCam.aspect = iw / ih;
+        insetCam.fov = fitFov(eyeP, 0.8);
+        insetCam.updateProjectionMatrix();
+        insetCam.updateMatrixWorld();
+        u.uEye.value.copy(eyeP).applyMatrix4(inv);
+        lookYou.setHead(headOf(you, eyeYou), insetCam, it.who === 'you' ? 1 : 0);
+        lookNb.setHead(headOf(nb, eyeNb), insetCam, it.who === 'nb' ? 1 : 0);
+        renderer.setScissorTest(true);
+        renderer.setScissor(0, 0, iw, ih);
+        renderer.setViewport(0, 0, iw, ih);
+        if (i > 0) renderer.shadowMap.autoUpdate = false;     // 阴影每帧只更新一次
+        renderer.render(scene, insetCam);
+        renderer.shadowMap.autoUpdate = true;
+        renderer.setScissorTest(false);
+        renderer.setViewport(0, 0, W, H);
+        if (it.cv.width !== iwPx || it.cv.height !== ihPx) { it.cv.width = iwPx; it.cv.height = ihPx; }
+        it.g.drawImage(renderer.domElement, 0, renderer.domElement.height - ihPx, iwPx, ihPx, 0, 0, iwPx, ihPx);
+        const a = anglesOf(eyeP.clone().applyMatrix4(inv));
+        const ev = model.evalAt(a.theta, a.psi);
+        const html = `<b>${it.who === 'nb' ? '旁人' : '你'}看到的</b><span>亮度 <b>${Math.round(ev.yRatio * 100)}%</b> · ${a.theta.toFixed(0)}°</span>`;
+        if (it.cap.dataset.html !== html) { it.cap.innerHTML = html; it.cap.dataset.html = html; }
+      });
       u.uEye.value.copy(mainEye).applyMatrix4(inv);
-      const a = anglesOf(otherEye.clone().applyMatrix4(inv));
-      const ev = model.evalAt(a.theta, a.psi);
-      const html = `<b>${otherIsYou ? '你' : '旁人'}看到的</b><span>亮度 <b>${Math.round(ev.yRatio * 100)}%</b> · ${a.theta.toFixed(0)}°</span>`;
-      if ($('insetCap').dataset.html !== html) { $('insetCap').innerHTML = html; $('insetCap').dataset.html = html; }
     }
     lookYou.setHead(headOf(you, eyeYou), rig.camera, mainViewer === 'you' || switching ? camFade : 0);
     lookNb.setHead(eyeNb ? headOf(nb, eyeNb) : eyeYou, rig.camera, mainViewer === 'nb' || switching ? camFade : 0);
@@ -851,12 +863,12 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       data.update(panelProfiles, eyes, JMAX, device.name);
     }
 
-    // 地铁场景的角落小窗：画面在主画面之前渲染（见上），这里只更新位置、淡入淡出和说明
-    const inset = $('inset');
+    // 地铁场景的两个小窗：画面在主画面之前渲染（见上），这里只更新位置、淡入淡出
     insetAlpha = THREE.MathUtils.clamp(insetAlpha + ((insetOn ? 1 : 0) - insetAlpha) * Math.min(1, dt / 220), 0, 1);
-    if (insetAlpha > 0.01) {
-      Object.assign(inset.style, { display: 'block', opacity: String(insetAlpha), left: insetRect[0] + 'px', top: insetRect[1] + 'px', width: insetRect[2] + 'px', height: insetRect[3] + 'px' });
-    } else inset.style.display = 'none';
+    for (const it of insets) {
+      if (insetAlpha > 0.01) Object.assign(it.el.style, { display: 'block', opacity: String(insetAlpha), left: it.rect[0] + 'px', top: it.rect[1] + 'px', width: it.rect[2] + 'px', height: it.rect[3] + 'px' });
+      else it.el.style.display = 'none';
+    }
 
     // 读数（主观看者，屏幕中心）
     const c = probes[1];
