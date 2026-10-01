@@ -67,7 +67,8 @@ export function buildPhone(spec: DeviceSpec, colorId?: string): PhoneModel {
   group.name = 'phone:' + spec.id;
   const body = buildBody(spec.body);
 
-  const frame = new THREE.MeshPhysicalMaterial({ metalness: 1, roughness: 0.34, clearcoat: 0.3, clearcoatRoughness: 0.4 });
+  const fin = spec.finish || { metalness: 1, roughness: 0.34, clearcoat: 0.3 };
+  const frame = new THREE.MeshPhysicalMaterial({ metalness: fin.metalness, roughness: fin.roughness, clearcoat: fin.clearcoat, clearcoatRoughness: 0.4 });
   const back = new THREE.MeshPhysicalMaterial({ metalness: 0, roughness: 0.4, clearcoat: 1, clearcoatRoughness: 0.12 });
   const islandGlass = new THREE.MeshPhysicalMaterial({
     color: '#050507', roughness: 0.06, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03,
@@ -76,12 +77,16 @@ export function buildPhone(spec: DeviceSpec, colorId?: string): PhoneModel {
   const lensRing = new THREE.MeshPhysicalMaterial({ color: '#141518', metalness: 0.9, roughness: 0.3 });
   const lensGlass = new THREE.MeshPhysicalMaterial({ color: '#020306', roughness: 0.02, clearcoat: 1, clearcoatRoughness: 0.02, iridescence: 0.6, iridescenceIOR: 1.6 });
   const dark = new THREE.MeshPhysicalMaterial({ color: '#060608', roughness: 0.08, clearcoat: 1 });
-  const flash = new THREE.MeshPhysicalMaterial({ color: '#d9cfa6', roughness: 0.45, clearcoat: 0.8 });
+  const flash = new THREE.MeshPhysicalMaterial({ color: spec.flash || '#d9cfa6', roughness: 0.45, clearcoat: 0.8 });
+  const seam = new THREE.MeshStandardMaterial({ color: '#0b0b0d', roughness: 0.7, metalness: 0 });
+  const lensInner = new THREE.MeshStandardMaterial({ color: '#111216', metalness: 0.2, roughness: 0.75 });   // 镜筒：哑光深灰，不反光
+  const lensEye = new THREE.MeshPhysicalMaterial({ color: '#04060c', roughness: 0.05, clearcoat: 1, clearcoatRoughness: 0.02, iridescence: 0.7, iridescenceIOR: 1.8, iridescenceThicknessRange: [250, 600] });
   const mats: THREE.Material[] = new Array(MAT_COUNT);
   mats[MAT.FRAME] = frame; mats[MAT.BUTTON] = frame; mats[MAT.ISLAND_RIM] = frame;
   mats[MAT.BACK] = back; mats[MAT.ISLAND] = islandGlass;
   mats[MAT.LENS_RING] = lensRing; mats[MAT.LENS_GLASS] = lensGlass;
   mats[MAT.DARK] = dark; mats[MAT.FLASH] = flash;
+  mats[MAT.SEAM] = seam; mats[MAT.LENS_INNER] = lensInner; mats[MAT.LENS_EYE] = lensEye;
   const bodyMesh = new THREE.Mesh(body, mats);
   bodyMesh.castShadow = true;
   bodyMesh.receiveShadow = true;
@@ -104,7 +109,10 @@ export function buildPhone(spec: DeviceSpec, colorId?: string): PhoneModel {
     frame.color.set(c.frame);
     back.color.set(c.back);
     back.roughness = c.backRough;
+    back.metalness = c.backMetal ?? 0;
+    back.clearcoat = c.backMetal !== undefined ? 0.2 : 1;      // 磨砂玻璃窗：涂层弱一些，不泛白
     back.clearcoatRoughness = c.backRough > 0.3 ? 0.45 : 0.08;
+    if (c.ring) { lensRing.color.set(c.ring); lensRing.metalness = 0.8; lensRing.roughness = 0.42; }
     if (c.sparkle) { sparkle ||= sparkleTexture(); back.emissiveMap = sparkle; back.emissive.set('#9fb4ff'); back.emissiveIntensity = 0.35; }
     else { back.emissiveMap = null; back.emissive.set('#000'); }
     back.needsUpdate = true;

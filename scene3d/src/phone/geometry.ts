@@ -7,8 +7,9 @@ import * as THREE from 'three';
 
 export const MAT = {
   FRAME: 0, BACK: 1, ISLAND: 2, BUTTON: 3, LENS_RING: 4, LENS_GLASS: 5, DARK: 6, FLASH: 7, ISLAND_RIM: 8,
+  SEAM: 9, LENS_INNER: 10, LENS_EYE: 11,
 } as const;
-export const MAT_COUNT = 9;
+export const MAT_COUNT = 12;
 
 export interface BodySpec {
   W: number; H: number; T: number;
@@ -21,6 +22,12 @@ export interface BodySpec {
   /** 背面主体材质：'glass' 玻璃 / 玻纤后盖；'frame' 与中框同一块金属（iPhone 铝合金一体机身，玻璃窗用 flats 加） */
   backMat?: 'glass' | 'frame';
   lenses: [number, number, number, number][];          // [x, y(相对模组中心), 半径, 凸起高度]
+  /** 镜头玻璃里画出内圈镜片与光圈（iPhone） */
+  lensDetail?: boolean;
+  /** 相机平台底部一圈深色接缝（宽度 mm，iPhone 平台与机身之间） */
+  islandSeam?: number;
+  /** 中框天线条：[距顶部 mm, 宽 mm]，左右两侧都画；距顶部为负数时从底部量 */
+  bands?: [number, number][];
   /** 背面平贴部件：相对机身中心；island 为 true 时贴在相机平台顶面、y 相对平台中心 */
   flats: { x: number; y: number; w: number; h: number; r: number; mat: number; island?: boolean }[];
   buttons: [number, number, number][];                 // [距顶部, 长度, 侧(1 右 / −1 左)]
@@ -164,6 +171,11 @@ export function buildBody(s: BodySpec, scale = 0.001) {
   const iprof = [{ d: 0, w: -T + 0.2 }, ...quarter(6, (p) => ({ d: ifl * (1 - Math.cos(p)), w: -T - (I.depth - ifl) - ifl * Math.sin(p) }))];
   sweep(m, IB, I.w / 2, I.h / 2, I.r, iprof, 16, MAT.ISLAND_RIM);
   const itop = -T - I.depth;
+  if (s.islandSeam) {
+    const g = s.islandSeam;
+    const sr: number | [number, number] = Array.isArray(I.r) ? [I.r[0] + g, I.r[1] + g] : I.r + g;
+    cap(m, IB, I.w / 2 + g, I.h / 2 + g, sr, 0, -T - 0.03, -1, 16, MAT.SEAM);
+  }
   if (I.rim > 0) {
     // 顶面外圈一道金属边，内部是玻璃
     cap(m, IB, I.w / 2, I.h / 2, I.r, ifl, itop, -1, 16, MAT.ISLAND_RIM);
@@ -186,11 +198,27 @@ export function buildBody(s: BodySpec, scale = 0.001) {
     ];
     sweep(m, L, lr, lr, lr, lp, 24, MAT.LENS_RING);
     cap(m, L, lr, lr, lr, ring, top + 0.5, -1, 24, MAT.LENS_GLASS);
+    if (s.lensDetail) {
+      // 玻璃后面的镜片：一圈深灰镜筒 + 中间偏蓝的镜片（叠在玻璃上，略微高出避免闪烁）
+      const g = lr - ring;
+      cap(m, L, g * 0.72, g * 0.72, g * 0.72, 0, top + 0.47, -1, 24, MAT.LENS_INNER);
+      cap(m, L, g * 0.5, g * 0.5, g * 0.5, 0, top + 0.44, -1, 24, MAT.LENS_EYE);
+      cap(m, L, g * 0.16, g * 0.16, g * 0.16, 0, top + 0.41, -1, 16, MAT.LENS_GLASS);
+    }
   }
   // 背面平贴部件（潜望/传感器窗口、闪光灯）
   for (const fl of s.flats) {
     const F = basis([fl.x, fl.island ? iy + fl.y : fl.y, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]);
     cap(m, F, fl.w / 2, fl.h / 2, fl.r, 0, (fl.island ? itop : -T) - 0.06, -1, 16, fl.mat);
+  }
+
+  // 中框天线条（细深色条，贴在两侧直边上）
+  for (const [at, bw] of s.bands || []) {
+    const y = at >= 0 ? hh - at : -hh - at;
+    for (const side of [1, -1]) {
+      const Bd = basis([side * (hw + 0.012), y, -T / 2], [0, 0, 1], [0, 1, 0], [side, 0, 0]);
+      cap(m, Bd, (T - 2 * f) / 2, bw / 2, 0.05, 0, 0, 1, 2, MAT.SEAM);
+    }
   }
 
   // 侧键

@@ -24,7 +24,7 @@ const app = await mount(host, {
   person: './models/ubc/Superhero_Male_FullBody.gltf',
   makePattern: (n, w, h) => window.Patterns.make(n, w, h),
   scene: q.get('scene') || undefined,
-  view: (q.get('view') as 'eye' | 'explain') || undefined,
+  view: q.get('view') === 'stereo' ? 'eye' : (q.get('view') as 'eye' | 'explain') || undefined,
   pattern: q.get('pattern') || undefined,
 });
 if (q.has('seek')) app.seekView(+q.get('seek')!);
@@ -33,6 +33,12 @@ if (q.has('viewer')) app.setViewer(q.get('viewer') as 'you' | 'nb');
 if (q.has('from')) app.seek(q.get('from')!, q.get('scene') || 'normal', +(q.get('p') || 0.5));
 for (const [k, v] of q) if (k.startsWith('param.')) app.setParam(k.slice(6), +v);
 if (q.get('data') === '1') app.setData(true);
+// 双眼视差：?view=stereo，&st=毫秒 停在自动播放的某一刻，&stl=split|overlay|wiggle 直接切到某种显示
+if (q.get('view') === 'stereo') {
+  app.stereoStart();
+  if (q.has('st')) app.stereoSeek(+q.get('st')!);
+  if (q.has('stl')) app.stereoLayout(q.get('stl') as 'split' | 'overlay' | 'wiggle');
+}
 await app.ready;
 (window as any).s3d = app;
 (window as any).__ready = true;

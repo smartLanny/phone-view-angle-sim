@@ -328,6 +328,8 @@ body.clean #hud { position: fixed; left: 28px; top: 24px; padding: 0; }
 .app-mode { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 40;
   background: var(--surface); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
 .app-mode button { padding: 7px 16px; }
+/* 场景演示在大屏幕上整体放大（--s3d-k 由 scene3d.js 按窗口大小写入） */
+body.mode-3d .app-mode { top: calc(14px * var(--s3d-k, 1)); transform: translateX(-50%) scale(var(--s3d-k, 1)); transform-origin: 50% 0; }
 #scene3d { position: fixed; inset: 0; display: none; z-index: 1; }
 #scene3d.loading::after { content: "正在加载三维场景…"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: var(--text-2); }
 body.mode-3d #scene3d { display: block; }
@@ -338,8 +340,9 @@ body:not(.mode-3d) #hint { top: 62px; }
 @media (max-width: 1179px) {
   .app-mode { left: auto; right: 12px; transform: none; }
   body[data-layout="side"] .app-mode { right: 344px; }
+  body.mode-3d .app-mode { transform: scale(var(--s3d-k, 1)); transform-origin: 100% 0; }
 }
 @media (max-width: 760px) {
-  .app-mode { top: 10px; right: 10px; }
+  .app-mode, body.mode-3d .app-mode { top: 10px; right: 10px; }
   .app-mode button { padding: 6px 10px; font-size: 12px; }
 }

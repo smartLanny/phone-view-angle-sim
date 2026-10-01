@@ -18,7 +18,7 @@ class FatLine {
   geo = new LineGeometry();
   mat: LineMaterial;
   obj: Line2;
-  constructor(scene: THREE.Scene, color: string, width: number, opacity: number, dashed = false) {
+  constructor(scene: THREE.Scene, color: string, public width: number, opacity: number, dashed = false) {
     this.mat = new LineMaterial({ color, linewidth: width, transparent: true, opacity, dashed, dashSize: 0.008, gapSize: 0.006, depthTest: true });
     this.obj = new Line2(this.geo, this.mat);
     this.obj.renderOrder = 30;
@@ -69,6 +69,13 @@ export class Annotations {
   }
 
   setResolution(w: number, h: number) { for (const l of Object.values(this.lines)) l.mat.resolution.set(w, h); }
+
+  /** 界面缩放（大屏幕上标注跟着放大）：线宽、标签间距、引线圆点都乘这个系数；字号由 CSS 的 --k 控制 */
+  k = 1;
+  setScale(k: number) {
+    this.k = k;
+    for (const l of Object.values(this.lines)) l.mat.linewidth = l.width * k;
+  }
 
   /** 第二位观看者（地铁场景里没被选中的那个人）：只画到屏幕中心的视线和一个读数 */
   second: { eye: THREE.Vector3; name: string; ev: Eval; theta: number } | null = null;
@@ -136,22 +143,23 @@ export class Annotations {
       return { el, a, w: el.offsetWidth, h: el.offsetHeight, y: a.y };
     });
     // 纵向排开，互不重叠，并保持在画面内
+    const k = this.k, off = 28 * k, edge = 12 * k;
     items.sort((p, q) => p.y - q.y);
-    const gap = 8;
+    const gap = 8 * k;
     for (let i = 1; i < items.length; i++) {
       const prev = items[i - 1], cur = items[i];
       const minY = prev.y + (prev.h + cur.h) / 2 + gap;
       if (cur.y < minY) cur.y = minY;
     }
-    const over = items.length ? items[items.length - 1].y + items[items.length - 1].h / 2 - (H - 90) : 0;
+    const over = items.length ? items[items.length - 1].y + items[items.length - 1].h / 2 - (H - 90 * k) : 0;
     if (over > 0) items.forEach((it) => { it.y -= over; });
     let paths = '';
     for (const it of items) {
-      const x = side > 0 ? box.x1 + 28 : box.x0 - 28 - it.w;
-      const lx = Math.min(Math.max(x, 12), W - it.w - 12);
+      const x = side > 0 ? box.x1 + off : box.x0 - off - it.w;
+      const lx = Math.min(Math.max(x, edge), W - it.w - edge);
       it.el.style.transform = `translate(${lx}px, ${it.y - it.h / 2}px)`;
       const ex = side > 0 ? lx : lx + it.w;
-      paths += `<path d="M${it.a.x},${it.a.y} L${(it.a.x + ex) / 2},${it.y} L${ex},${it.y}"/><circle cx="${it.a.x}" cy="${it.a.y}" r="2.5"/>`;
+      paths += `<path d="M${it.a.x},${it.a.y} L${(it.a.x + ex) / 2},${it.y} L${ex},${it.y}"/><circle cx="${it.a.x}" cy="${it.a.y}" r="${(2.5 * k).toFixed(1)}"/>`;
     }
     this.svg.innerHTML = paths;
     // 观看距离：标在中心视线的中点，向远离手机的方向偏一点
@@ -160,14 +168,14 @@ export class Annotations {
     const d = this.labels.dist;
     const dist = `<b>${(eye.distanceTo(c.world) * 100).toFixed(0)} cm</b><span class="k">观看距离</span>`;
     if (d.dataset.html !== dist) { d.innerHTML = dist; d.dataset.html = dist; }
-    let dx = mid.x - d.offsetWidth / 2, dy = mid.y - d.offsetHeight - 10;
+    let dx = mid.x - d.offsetWidth / 2, dy = mid.y - d.offsetHeight - 10 * k;
     const hit = (y: number) => items.some((it) => {
-      const lx = side > 0 ? box.x1 + 28 : box.x0 - 28 - it.w;
+      const lx = side > 0 ? box.x1 + off : box.x0 - off - it.w;
       return dx < lx + it.w && dx + d.offsetWidth > lx && y < it.y + it.h / 2 && y + d.offsetHeight > it.y - it.h / 2;
     });
-    if (hit(dy)) dy = mid.y + 10;
-    if (hit(dy)) dx = Math.min(dx, (side > 0 ? box.x0 : box.x1) - d.offsetWidth - 16);
-    dx = Math.min(Math.max(dx, 8), W - d.offsetWidth - 8);
+    if (hit(dy)) dy = mid.y + 10 * k;
+    if (hit(dy)) dx = Math.min(dx, (side > 0 ? box.x0 : box.x1) - d.offsetWidth - 16 * k);
+    dx = Math.min(Math.max(dx, 8 * k), W - d.offsetWidth - 8 * k);
     d.style.transform = `translate(${dx}px, ${dy}px)`;
     // 第二位观看者：标在他那条视线靠眼睛的一端
     const v2 = this.labels.v2;
@@ -180,8 +188,8 @@ export class Annotations {
       if (v2.dataset.html !== html2) { v2.innerHTML = html2; v2.dataset.html = html2; }
       v2.style.display = '';
       const pe = proj(s2.eye.clone().lerp(c.world, 0.25));
-      const x2 = Math.min(Math.max(pe.x - v2.offsetWidth / 2, 8), W - v2.offsetWidth - 8);
-      v2.style.transform = `translate(${x2}px, ${pe.y - v2.offsetHeight - 12}px)`;
+      const x2 = Math.min(Math.max(pe.x - v2.offsetWidth / 2, 8 * k), W - v2.offsetWidth - 8 * k);
+      v2.style.transform = `translate(${x2}px, ${pe.y - v2.offsetHeight - 12 * k}px)`;
     }
   }
 

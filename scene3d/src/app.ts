@@ -16,6 +16,7 @@ import { createDataPanel, type PanelProfile } from './datapanel';
 import { createModel, anglesOf, type AngData, type AngleModel, type Profile } from './optics/model';
 import { lutTexture } from './optics/screen';
 import { Annotations } from './annotate';
+import { Stereo, type StereoLayout } from './stereo';
 import { CameraRig, type ViewMode } from './camera';
 import { PRESETS, TABLE_Y, SUBWAY_SEAT, type Preset, type SceneState, type Props, type Ctx } from './presets';
 import { CSS } from './ui-css';
@@ -38,10 +39,15 @@ const PATTERNS: [string, string][] = [['ui', '设置页'], ['read', '阅读'], [
 const TRANSITION_MS = 1300;
 const FADE_TO = 0.4;         // 切换结束后人物淡到的不透明度（人物本身已半透明，取 0.4 观感接近“0.3”）
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+/** 界面随窗口放大：1366×820 左右为 1，1080p 约 1.3，1440p 约 1.75，4K 约 2.6（大屏幕上标注不至于看不清）。窄屏不缩小。 */
+const autoScale = (W: number, H: number) => THREE.MathUtils.clamp(Math.min(W / 1366, H / 820), 1, 3);
+const SCALE_KEY = 's3d-ui-scale';
+const loadUserScale = () => { try { const v = parseFloat(localStorage.getItem(SCALE_KEY) || ''); return v >= 0.6 && v <= 2.5 ? v : 1; } catch { return 1; } };
 
 export async function mount(host: HTMLElement, opts: MountOptions) {
   const style = STYLES[0];
   host.classList.add('s3d');
+  let userScale = loadUserScale();     // 用户在“调整”里设的界面大小（乘在自动缩放上，存在本机浏览器）
   if (!document.getElementById('s3d-css')) {
     const st = document.createElement('style'); st.id = 's3d-css'; st.textContent = CSS; document.head.appendChild(st);
   }
@@ -188,6 +194,9 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   ui.className = 's3d-ui';
   host.appendChild(ui);
   const ann = new Annotations(scene, style.accent, ui);
+  const stereo = new Stereo(ui);
+  stereo.onChange = () => { host.classList.toggle('stereo', stereo.active); syncViewBtn(); };
+  stereo.onExit = () => stereo.stop();          // 退出后留在人眼视角
   const { W: W0, H: H0 } = size();
   const rig = new CameraRig(renderer.domElement, W0 / H0);
   ui.insertAdjacentHTML('beforeend', `
@@ -272,14 +281,17 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       : preset.hint;
     segOn('scenes', preset.id);
     const sub = preset.id === 'subway';
-    const views = sub ? [['explain', '讲解视角'], ['eye:nb', '旁人视角'], ['eye:you', '你的视角']] : [['explain', '讲解视角'], ['eye:you', '人眼视角']];
+    const views = sub ? [['explain', '讲解视角'], ['eye:nb', '旁人视角'], ['eye:you', '你的视角'], ['stereo', '双眼视差']] : [['explain', '讲解视角'], ['eye:you', '人眼视角'], ['stereo', '双眼视差']];
     const html = views.map(([v, n]) => `<button data-v="${v}">${n}</button>`).join('');
     if ($('views').dataset.html !== html) { $('views').innerHTML = html; $('views').dataset.html = html; }
     syncViewBtn();
     renderAdjust();
   };
 
+  let resumeStereo = false;
   const goto = (p: Preset, animate = true) => {
+    resumeStereo = stereo.active;
+    stereo.stop();
     const target = buildState(p);
     if (!animate || !state) { preset = p; applySteady(target, true); describe(); startFade(FADE_TO, 1); return; }
     trans = { a: snapNow(), b: target, t0: performance.now(), dur: TRANSITION_MS };
@@ -311,6 +323,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       applySteady(b, true);
       startFade(FADE_TO, 300);    // 切换结束后约 0.3 s 内淡到半透明，焦点回到屏幕
       if (resumeEye) { viewer = resumeEye; resumeEye = null; setView('eye'); describe(); }
+      if (resumeStereo) { resumeStereo = false; stereo.start(); }
     }
   };
 
@@ -325,6 +338,8 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     box.innerHTML = `<div class="s3d-adjust-h">调整 · ${preset.name}</div>${rows}<div class="s3d-derived" data-k="derived"></div>
       <div class="s3d-row"><span>机身颜色 · ${device.name}</span></div><div class="s3d-swatches">${sw}</div>
       <div class="s3d-derived">外观：${phone.source === 'apple' ? '苹果官网 AR 模型（iPhone 18 Pro 等比放大，仅本机）' : '按官方尺寸参数化建模'}</div>
+      <label class="s3d-row"><span>界面与标注大小</span><b data-out="uiScale">${Math.round(userScale * 100)}%</b></label>
+      <input type="range" data-ui="scale" min="60" max="250" step="10" value="${Math.round(userScale * 100)}">
       <button class="s3d-link" data-k="resetParams">恢复默认</button>`;
     updateDerived();
   }
@@ -336,6 +351,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   }
   $('adjust').addEventListener('input', (e) => {
     const t = e.target as HTMLInputElement;
+    if (t.dataset.ui === 'scale') { setUserScale(+t.value / 100); return; }
     if (!t.dataset.p) return;
     params[preset.id][t.dataset.p] = +t.value;
     const def = preset.params.find((d) => d.key === t.dataset.p)!;
@@ -373,7 +389,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   });
   /** 视角按钮：explain，或 eye:you / eye:nb（地铁场景里选谁的眼睛） */
   function syncViewBtn() {
-    const v = rig.mode === 'explain' ? 'explain' : `eye:${preset.id === 'subway' ? viewer : 'you'}`;
+    const v = stereo.active ? 'stereo' : rig.mode === 'explain' ? 'explain' : `eye:${preset.id === 'subway' ? viewer : 'you'}`;
     segOn('views', v);
     host.classList.toggle('eyeview', rig.mode === 'eye');
   }
@@ -386,7 +402,12 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     viewer = v; describe();
   };
   const pickView = (v: string) => {
-    if (v === 'explain') { resumeEye = null; setView('explain'); }
+    if (v === 'stereo') {                 // 双眼视差：先到人眼视角（镜头到位后开始播放）
+      if (!stereo.active) { if (rig.mode !== 'eye') setView('eye'); stereo.start(); }
+      return;
+    }
+    stereo.stop();
+    if (v === 'explain') { resumeEye = null; resumeStereo = false; setView('explain'); }
     else { setViewer(v.split(':')[1] as Viewer); setView('eye'); }
   };
   $('views').addEventListener('click', (e) => { const b = (e.target as HTMLElement).closest('button'); if (b) pickView(b.dataset.v!); });
@@ -404,6 +425,10 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       pickView(opts2[(opts2.indexOf(cur) + 1) % opts2.length]);
     } else if (k === 'p' && hasPrivacy()) { privEl.checked = !privEl.checked; privacy = privEl.checked; useProfile(); }
     else if (k === 'd') setData(!data.visible);
+    else if (k === 'b') { if (stereo.active) stereo.stop(); else pickView('stereo'); }
+    else if (k === '=' || k === '+') setUserScale(userScale + 0.1);       // 现场放大 / 缩小界面与标注
+    else if (k === '-' || k === '_') setUserScale(userScale - 0.1);
+    else if (k === '0') setUserScale(1);
     else return;
     e.preventDefault();
   });
@@ -451,11 +476,28 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
 
   // ---------- 渲染 ----------
   const insetCam = new THREE.PerspectiveCamera(42, 0.8, 0.01, 30);
+  let uiK = 1;
+  const applyScale = () => {
+    const { W, H } = size();
+    uiK = autoScale(W, H) * userScale;
+    host.style.setProperty('--k', uiK.toFixed(3));
+    document.documentElement.style.setProperty('--s3d-k', uiK.toFixed(3));   // 页面上的模式切换按钮跟着放大
+    ann.setScale(uiK);
+  };
+  function setUserScale(v: number) {
+    userScale = Math.round(THREE.MathUtils.clamp(v, 0.6, 2.5) * 10) / 10;
+    try { localStorage.setItem(SCALE_KEY, String(userScale)); } catch { /* 隐私模式等存不了就算了 */ }
+    applyScale();
+    const out = ui.querySelector('[data-out="uiScale"]'), inp = ui.querySelector('[data-ui="scale"]') as HTMLInputElement | null;
+    if (out) out.textContent = `${Math.round(userScale * 100)}%`;
+    if (inp && +inp.value !== Math.round(userScale * 100)) inp.value = String(Math.round(userScale * 100));
+  }
   const resize = () => {
     const { W, H } = size();
     renderer.setSize(W, H, false);
     rig.setAspect(W / H);
     ann.setResolution(W, H);
+    applyScale();
     scene.background = gradientTexture(style.bg[0], style.bg[1], W, H);
   };
   resize();
@@ -511,6 +553,20 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     lookYou.setFade(figFade * reachFade);
     lookNb.setFade(figFade * nbAlpha);
     lookNb.setDepth(nbAlpha > 0.98);
+    const stereoOn = stereo.active && rig.progress >= 1 && !trans;
+    let covered = false;
+    if (stereoOn) {
+      covered = stereo.render(now, {
+        renderer, W, H, k: uiK, eye: mainEye, screen: scr, up, phoneInv: inv, model, fitFov,
+        renderEye: (ey, cam) => {
+          u.uEye.value.copy(ey).applyMatrix4(inv);
+          lookYou.setHead(headOf(you, eyeYou), cam, mainViewer === 'you' ? 1 : 0);
+          if (eyeNb) lookNb.setHead(headOf(nb, eyeNb), cam, mainViewer === 'nb' ? 1 : 0);
+          renderer.render(scene, cam);
+        },
+      });
+      u.uEye.value.copy(mainEye).applyMatrix4(inv);
+    }
     lookYou.setHead(headOf(you, eyeYou), rig.camera, mainViewer === 'you' || switching ? camFade : 0);
     lookNb.setHead(eyeNb ? headOf(nb, eyeNb) : eyeYou, rig.camera, mainViewer === 'nb' || switching ? camFade : 0);
 
@@ -518,7 +574,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     ann.setVisible(rig.progress < 0.05);
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, W, H);
-    renderer.render(scene, rig.camera);
+    if (!covered) renderer.render(scene, rig.camera);
     ann.layout(rig.camera, mainEye, phoneM, phone.half, W, H);
 
     // 数据面板（打开时才算）
@@ -531,17 +587,18 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       }));
       const am = anglesOf(mainEye.clone().applyMatrix4(inv));
       const eyes = [{ ...am, who: sub ? (mainViewer === 'nb' ? '旁人' : '你') : '眼睛' }];
-      if (otherEye) eyes.push({ ...anglesOf(otherEye.clone().applyMatrix4(inv)), who: mainViewer === 'nb' ? '你' : '旁人' });
+      if (otherEye && !stereoOn) eyes.push({ ...anglesOf(otherEye.clone().applyMatrix4(inv)), who: mainViewer === 'nb' ? '你' : '旁人' });
+      if (stereoOn && stereo.reads) eyes.splice(0, 1, ...stereo.reads.map((r, i) => ({ ...anglesOf(r.eye.clone().applyMatrix4(inv)), who: i ? '右眼' : '左眼' })));
       data.update(panelProfiles, eyes, JMAX, device.name);
     }
 
     // 地铁场景：角落小窗，用另一个人的眼睛对同一部手机再渲染一次
     const inset = $('inset');
-    if (sub && otherEye) {
+    if (sub && otherEye && !stereoOn) {
       const narrow = W < 700;
       const big = rig.mode === 'eye';
-      const iw = Math.round(Math.min(big ? 360 : 300, W * (narrow ? 0.3 : big ? 0.24 : 0.2))), ih = Math.round(iw * 1.25);
-      const ix = W - iw - (narrow ? 10 : 24), iy = narrow ? 62 : 72;
+      const iw = Math.round(Math.min((big ? 360 : 300) * uiK, W * (narrow ? 0.3 : big ? 0.24 : 0.2))), ih = Math.round(iw * 1.25);
+      const ix = W - iw - (narrow ? 10 : 24 * uiK), iy = narrow ? 62 : 72 * uiK;
       Object.assign(inset.style, { display: 'block', left: ix + 'px', top: iy + 'px', width: iw + 'px', height: ih + 'px' });
       insetCam.position.copy(otherEye);
       insetCam.up.copy(up);
@@ -602,6 +659,12 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     },
     /** 调试：讲解 → 人眼过渡停在进度 p */
     seekView(p: number) { rig.seek(p); },
+    /** 双眼视差：开始 / 退出、把自动播放停在 ms 处、切换并排 / 叠加 / 交替 */
+    stereoStart() { pickView('stereo'); },
+    stereoStop() { stereo.stop(); },
+    stereoSeek(ms: number) { stereo.seek(ms); },
+    stereoLayout(l: StereoLayout) { stereo.setLayout(l); },
+    get stereoReads() { return stereo.reads; },
     /** 检查：从你的眼睛看过去，有多少人物顶点挡在屏幕显示区前面（应为 0） */
     occlusion() {
       const i2 = phoneM.clone().invert();
