@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+.claude/
+
+# 本地备份与参考素材
+*.zip
+*.7z
+外观*.png
+屏幕截图*.png
+*.txt
