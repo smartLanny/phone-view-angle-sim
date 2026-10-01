@@ -9,6 +9,8 @@ import { poseSeated, holdPhoneRight, armOnLap, handOnTable, lookAt, phoneMatrix,
 const DEG = Math.PI / 180;
 export const TABLE_Y = 0.70;         // 桌面高度
 export const SUBWAY_SEAT = 0.44;     // 地铁座椅高度
+/** 正常拿手机时比正对视线多往后仰的角度（正常手持、地铁里的你都这样拿） */
+const HOLD_TILT = 18;
 
 export interface Ctx { you: Character; nb: Character; dims: PhoneDims }
 export interface ParamDef { key: string; label: string; min: number; max: number; step: number; unit: string }
@@ -93,7 +95,7 @@ export const PRESETS: Preset[] = [
       { key: 'theta', label: '手机转开', min: -45, max: 60, step: 1, unit: '°' },
       { key: 'tilt', label: '手机俯仰', min: -40, max: 40, step: 1, unit: '°' },
     ],
-    defaults: { dist: 30, theta: 0, tilt: 18 },
+    defaults: { dist: 30, theta: 0, tilt: HOLD_TILT },
     drag: { x: { key: 'theta', perPx: 0.25 }, y: { key: 'tilt', perPx: 0.25 } },
     build(ctx, p) {
       const { eye, phone, reach } = holding(ctx, p, { seatHeight: 0.46, lean: 8, headPitch: 18, gazePitch: 28, side: -0.02 });
@@ -145,12 +147,12 @@ export const PRESETS: Preset[] = [
     },
   },
   {
-    id: 'subway', name: '地铁旁座', hint: '你坐着正常看手机，右边座位的乘客从侧面斜看你的屏幕',
+    id: 'subway', name: '地铁旁座', hint: '你坐着正常看手机（和正常手持一样往后仰），右边座位的乘客从侧面斜看你的屏幕',
     params: [{ key: 'theta', label: '旁人离轴角', min: 40, max: 70, step: 1, unit: '°' }],
     defaults: { theta: 55 },
     drag: { x: { key: 'theta', perPx: 0.15 } },
     build(ctx, p) {
-      const { eye, phone, reach } = holding(ctx, { dist: 30, theta: 0 }, { seatHeight: SUBWAY_SEAT, lean: 8, headPitch: 18, gazePitch: 28, side: -0.02 });
+      const { eye, phone, reach } = holding(ctx, { dist: 30, theta: 0, tilt: HOLD_TILT }, { seatHeight: SUBWAY_SEAT, lean: 8, headPitch: 18, gazePitch: 28, side: -0.02 });
       const you = capturePose(ctx.you);
       const scr = new THREE.Vector3().setFromMatrixPosition(phone);
       // 旁人眼睛的目标位置：从屏幕中心出发，与法线成 theta、偏向人物右侧（−X），高度与自己的眼睛相近
