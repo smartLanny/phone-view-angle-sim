@@ -286,7 +286,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   let props: Props = { stool: 0, table: 0, bench: 0 };
   let nbAlpha = 0;
   let figFade = 1, fadeFrom = 1, fadeTo = 1, fadeT0 = 0, fadeDur = 300;
-  let trans: null | { a: Snap; b: SceneState; t0: number; dur: number; p?: number } = null;
+  let trans: null | { a: Snap; b: SceneState; t0: number; dur: number; p?: number; grip?: [THREE.Matrix4, THREE.Matrix4] | null; gripFor?: SceneState } = null;
   /** 演示序列里的“转动手机”：参数平滑变到目标值 */
   let paramTween: null | { key: string; from: number; to: number; t0: number; dur: number } = null;
 
@@ -337,18 +337,43 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     describe();
   };
 
+  /** 右手的坐标系（去掉骨骼缩放） */
+  const handFrame = () => {
+    const h = you.bones.hand_r, p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+    h.updateWorldMatrix(true, false);
+    h.matrixWorld.decompose(p, q, s);
+    return new THREE.Matrix4().compose(p, q, new THREE.Vector3(1, 1, 1));
+  };
+  /** 这个姿势里手机是否拿在右手里；是的话返回“手机相对右手”的变换 */
+  const gripOf = (pose: PoseSnap, ph: THREE.Matrix4) => {
+    applyPose(you, pose);
+    const H = handFrame();
+    return new THREE.Vector3().setFromMatrixPosition(H).distanceTo(new THREE.Vector3().setFromMatrixPosition(ph)) < 0.16 ? H.invert().multiply(ph) : null;
+  };
+
   /** 每帧推进过渡：人物姿势、手机、道具、旁人、讲解镜头一起插值。 */
   const stepTransition = (now: number) => {
     if (!trans) return;
     const raw = trans.p ?? Math.min(1, (now - trans.t0) / trans.dur);
     const e = ease(raw);
     const { a, b } = trans;
+    // 过渡两端手机都拿在右手里：手机跟着手走（按两端“手机相对手”的位置插值），手和手机中途不会分开
+    if (trans.gripFor !== b) {
+      const ga = gripOf(a.you, a.phone), gb = gripOf(b.you, b.phone);
+      trans.grip = ga && gb ? [ga, gb] : null;
+      trans.gripFor = b;
+    }
     blendPose(you, a.you, b.you, e);
     if (b.nb) blendPose(nb, a.nb ?? b.nb, b.nb, a.nb ? e : 1);
     else if (a.nb) applyPose(nb, a.nb);
     const pa = new THREE.Vector3(), qa = new THREE.Quaternion(), pb = new THREE.Vector3(), qb = new THREE.Quaternion(), sc = new THREE.Vector3();
-    a.phone.decompose(pa, qa, sc); b.phone.decompose(pb, qb, sc);
-    phoneM.compose(pa.lerp(pb, e), qa.slerp(qb, e), new THREE.Vector3(1, 1, 1));
+    if (trans.grip) {
+      trans.grip[0].decompose(pa, qa, sc); trans.grip[1].decompose(pb, qb, sc);
+      phoneM.copy(handFrame()).multiply(new THREE.Matrix4().compose(pa.lerp(pb, e), qa.slerp(qb, e), new THREE.Vector3(1, 1, 1)));
+    } else {
+      a.phone.decompose(pa, qa, sc); b.phone.decompose(pb, qb, sc);
+      phoneM.compose(pa.lerp(pb, e), qa.slerp(qb, e), new THREE.Vector3(1, 1, 1));
+    }
     for (const k of Object.keys(props) as (keyof Props)[]) props[k] = a.props[k] + (b.props[k] - a.props[k]) * e;
     nbAlpha = a.nbAlpha + ((b.nb ? 1 : 0) - a.nbAlpha) * e;
     rig.setExplain(a.cam.pos.clone().lerp(b.explain.pos, e), a.cam.target.clone().lerp(b.explain.target, e), b.explain.fov);
@@ -645,7 +670,10 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const player = createPlayer({
     apply: (st) => {
       const p = st.scene ? PRESETS.find((q) => q.id === st.scene) : null;
-      if (p && p !== preset) goto(p);          // 场景不同才换：换场景和这一段的第一个视角同时开始，镜头连贯；跳到段中间的某一步也先换到那个场景
+      // 每段开始（或跳到别的场景）时，这个场景的参数恢复默认（忽略手动调过 / 拖过的距离、角度）
+      const reset = !!p && (p !== preset || st.idx <= 0) && Object.keys(p.defaults).some((k) => params[p.id][k] !== p.defaults[k]);
+      if (reset) Object.assign(params[p!.id], p!.defaults);
+      if (p && (p !== preset || reset)) goto(p);   // 场景不同才换：换场景和这一段的第一个视角同时开始，镜头连贯；跳到段中间的某一步也先换到那个场景
       if (st.item) applyItem(st.item);
     },
     onStep: (st) => tl.highlight(st ? { seg: st.seg, idx: st.idx } : null),

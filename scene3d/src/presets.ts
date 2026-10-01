@@ -87,13 +87,13 @@ export const PRESETS: Preset[] = [
     },
   },
   {
-    id: 'normal', name: '正常手持', hint: '坐着单手拿手机，眼睛到屏幕约 30 cm，微微低头',
+    id: 'normal', name: '正常手持', hint: '坐着单手拿手机，眼睛到屏幕约 30 cm，微微低头；手机比正对视线再往后仰一些（顶端往外），眼睛从屏幕下方斜看',
     params: [
       { key: 'dist', label: '观看距离', min: 20, max: 50, step: 1, unit: 'cm' },
       { key: 'theta', label: '手机转开', min: -45, max: 60, step: 1, unit: '°' },
       { key: 'tilt', label: '手机俯仰', min: -40, max: 40, step: 1, unit: '°' },
     ],
-    defaults: { dist: 30, theta: 0, tilt: 0 },
+    defaults: { dist: 30, theta: 0, tilt: 18 },
     drag: { x: { key: 'theta', perPx: 0.25 }, y: { key: 'tilt', perPx: 0.25 } },
     build(ctx, p) {
       const { eye, phone, reach } = holding(ctx, p, { seatHeight: 0.46, lean: 8, headPitch: 18, gazePitch: 28, side: -0.02 });
