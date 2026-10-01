@@ -4,23 +4,25 @@
  */
 import * as THREE from 'three';
 import { capturePose, type Character, type PoseSnap } from './rig';
-import { poseSeated, holdPhoneRight, armOnLap, handOnTable, lookAt, phoneMatrix, eyeWorld, type PhoneDims } from './pose';
+import { poseSeated, poseLyingLeft, headFrame, LIE_LEFT, holdPhoneRight, armOnLap, handOnTable, lookAt, phoneMatrix, eyeWorld, type PhoneDims } from './pose';
 
 const DEG = Math.PI / 180;
 export const TABLE_Y = 0.70;         // 桌面高度
 export const SUBWAY_SEAT = 0.44;     // 地铁座椅高度
+export const BED_Y = 0.5;            // 床面高度
 /** 正常拿手机时比正对视线多往后仰的角度（正常手持、地铁里的你都这样拿） */
 const HOLD_TILT = 18;
 
 export interface Ctx { you: Character; nb: Character; dims: PhoneDims }
 export interface ParamDef { key: string; label: string; min: number; max: number; step: number; unit: string }
-export interface Props { stool: number; table: number; bench: number }
+export interface Props { stool: number; table: number; bench: number; bed: number }
 
 export interface SceneState {
   you: PoseSnap;
   nb: PoseSnap | null;               // 旁座乘客（只有地铁场景有）
   phone: THREE.Matrix4;
   reach: boolean;                    // 手臂是否够得着（够不着时人物淡化）
+  lying?: boolean;                   // 躺着：人眼视角的“上”跟着头（不保持世界水平），两只眼睛上下分开
   props: Props;
   explain: { pos: THREE.Vector3; target: THREE.Vector3; fov: number };
   derived: Record<string, number>;   // 由参数算出的量（如桌面场景的观看距离）
@@ -34,6 +36,8 @@ export interface Preset {
   defaults: Record<string, number>;
   /** 在画面上拖动手机时，横向 / 纵向分别改哪个参数（每像素改多少，可为负） */
   drag?: { x?: { key: string; perPx: number }; y?: { key: string; perPx: number } };
+  /** 躺着的场景（见 SceneState.lying） */
+  lying?: boolean;
   build(ctx: Ctx, p: Record<string, number>): SceneState;
 }
 
@@ -82,7 +86,7 @@ export const PRESETS: Preset[] = [
       const scr = new THREE.Vector3().setFromMatrixPosition(phone);
       return {
         you: capturePose(ctx.you), nb: null, phone, reach,
-        props: { stool: 1, table: 0, bench: 0 },
+        props: { stool: 1, table: 0, bench: 0, bed: 0 },
         explain: camFrom(eye, scr, v3(-0.85, 0.26, -0.5), v3(0, -0.04, 0)),
         derived: {},
       };
@@ -102,7 +106,7 @@ export const PRESETS: Preset[] = [
       const scr = new THREE.Vector3().setFromMatrixPosition(phone);
       return {
         you: capturePose(ctx.you), nb: null, phone, reach,
-        props: { stool: 1, table: 0, bench: 0 },
+        props: { stool: 1, table: 0, bench: 0, bed: 0 },
         explain: camFrom(eye, scr, v3(-0.9, 0.34, -0.38), v3(0, -0.05, 0)),
         derived: {},
       };
@@ -140,7 +144,7 @@ export const PRESETS: Preset[] = [
       const l = handOnTable(you, 'l', v3(center.x + 0.22, TABLE_Y + 0.035, center.z - 0.2), TABLE_Y);
       return {
         you: capturePose(you), nb: null, phone, reach: r && l,
-        props: { stool: 1, table: 1, bench: 0 },
+        props: { stool: 1, table: 1, bench: 0, bed: 0 },
         explain: camFrom(eye, center, v3(-0.95, 0.55, -0.55), v3(0, -0.1, 0.06), 32),
         derived: { dist: eye.distanceTo(center) * 100, height: (eye.y - glassY) * 100 },
       };
@@ -176,8 +180,37 @@ export const PRESETS: Preset[] = [
       armOnLap(nb, 'l'); armOnLap(nb, 'r');
       return {
         you, nb: capturePose(nb), phone, reach,
-        props: { stool: 0, table: 0, bench: 1 },
+        props: { stool: 0, table: 0, bench: 1, bed: 0 },
         explain: { pos: scr.clone().add(v3(-0.5, 1.45, -1.2)), target: scr.clone().add(v3(-0.24, -0.04, 0.02)), fov: 25 },
+        derived: {},
+      };
+    },
+  },
+  {
+    id: 'side', name: '侧卧', lying: true,
+    hint: '向左侧躺在床上看手机：手机举在脸前，但离下面那只眼睛更近，屏幕不在两眼正中——两只眼睛看屏幕的角度差得多，双眼色差很大',
+    params: [
+      { key: 'dist', label: '观看距离', min: 18, max: 40, step: 1, unit: 'cm' },
+      { key: 'shift', label: '手机偏向下面的眼睛', min: -20, max: 80, step: 1, unit: 'mm' },
+      { key: 'turn', label: '屏幕转向上面的眼睛', min: -30, max: 30, step: 1, unit: '°' },
+    ],
+    defaults: { dist: 22, shift: 45, turn: 0 },
+    drag: { x: { key: 'turn', perPx: 0.2 }, y: { key: 'shift', perPx: -0.3 } },
+    build(ctx, p) {
+      const { you, dims } = ctx;
+      poseLyingLeft(you, { bedY: BED_Y, pelvisX: -0.35, backZ: -0.05, headPitch: 12 });
+      // 手机：在脸前 dist 处，沿两眼连线往下面那只眼睛（左眼）偏 shift；屏幕“上”和头顶同向（内容是正的），
+      // 屏幕默认和脸平行（法线朝脸），turn 再把屏幕转向上面那只眼睛
+      const eye = eyeWorld(you);
+      const { right, up, fwd } = headFrame(you);
+      const center = eye.clone().addScaledVector(fwd, p.dist / 100).addScaledVector(right, -p.shift / 1000);
+      const normal = fwd.clone().negate().applyAxisAngle(up, (p.turn || 0) * DEG);   // 绕头顶方向转：正值让法线偏向右眼（上面）
+      const phone = phoneMatrix(center, normal, up);
+      const reach = holdPhoneRight(you, phone, dims, LIE_LEFT);
+      return {
+        you: capturePose(you), nb: null, phone, reach, lying: true,
+        props: { stool: 0, table: 0, bench: 0, bed: 1 },
+        explain: camFrom(eye, center, v3(-0.5, 0.3, 0.34), v3(0.02, -0.01, 0.06), 36),   // 从脚那头的前上方看：脸、两眼的视线和手机都在画面里
         derived: {},
       };
     },

@@ -5,16 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>可视角度仿真</title>
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=14">
 </head>
 <body data-layout="wide">
 <div class="sframe" id="sf0"></div>
 <div class="sframe" id="sf1"></div>
 <canvas id="gl" aria-label="手机屏幕可视角仿真画面"></canvas>
 <div id="scene3d" aria-label="三维场景演示"></div>
+<!-- 三维场景演示（做动画用）：默认不显示，从“画面 → 更多”进入；进入后顶部出现这个切换，可回到屏幕仿真 -->
 <nav class="app-mode seg" id="appMode" aria-label="模式">
-  <button data-v="scene" class="on">场景演示</button>
-  <button data-v="sim">屏幕仿真</button>
+  <button data-v="scene">场景演示</button>
+  <button data-v="sim" class="on">屏幕仿真</button>
 </nav>
 
 <!-- 宽屏时整体移入左栏；其他布局时浮在舞台左上角 -->
@@ -183,6 +184,11 @@
         <dt>P</dt><dd>防窥开关</dd>
       </dl>
       </details>
+      <details class="keys-box more-box">
+      <summary>更多</summary>
+      <button id="open3d" class="more-btn">三维场景演示</button>
+      <p class="note">人物拿手机的三维场景（正视、正常手持、放在桌上、地铁旁座、侧卧），可编排播放、导出视频，用来做演示动画。也可以在网址后加 <code>#mode=3d</code> 直接打开。</p>
+      </details>
     </section>
 
   </div>
@@ -203,8 +209,7 @@
 <script src="devices.js"></script>
 <script src="phone3d.js"></script>
 <script src="viz.js?v=12"></script>
-<script src="scene3d-person.js"></script>
-<script src="scene3d.js?v=4"></script>
-<script src="app.js?v=13"></script>
+<!-- 三维场景（scene3d-person.js、scene3d.js）只在进入场景演示时再加载，见 app.js -->
+<script src="app.js?v=14"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@
  * 各场景（presets.ts）用这些积木拼出完整姿势。坐标：人物面朝 +Z，右侧为 −X，单位米。
  */
 import * as THREE from 'three';
-import { type Character, resetPose, rotateWorld, rotateLocal, aimY, setWorldQuat, solveTwoBone, eyeWorld, worldPos, worldQuat } from './rig';
+import { type Character, resetPose, rotateWorld, rotateLocal, aimY, setWorldQuat, solveTwoBone, eyeWorld, headAxes, worldPos, worldQuat } from './rig';
 
 const DEG = Math.PI / 180;
 const X = new THREE.Vector3(1, 0, 0);
@@ -46,6 +46,64 @@ export function poseSeated(c: Character, p: SeatParams) {
   rotateWorld(b.Head, X, p.headPitch * 0.55);
 }
 
+export interface LieParams {
+  bedY: number;          // 床面高度
+  pelvisX: number;       // 骨盆沿床长方向的位置（头朝 +X）
+  backZ: number;         // 骨盆前后位置
+  headPitch: number;     // 低头（度，朝胸口方向）
+}
+
+/** 侧卧的身体朝向：整个人绕前后方向（Z）转 −90°，左侧在下、头朝 +X、仍面朝 +Z；
+ *  肩比髋宽，躺平时肩、髋都着床，身体会略微斜着（头那头高 7°） */
+export const LIE_LEFT = new THREE.Quaternion().setFromAxisAngle(Z, -83 * DEG);
+
+/**
+ * 向左侧卧（左侧压在床上），用来看手机：髋、膝微屈，上身微微前弓，头枕在枕头上、稍低头；
+ * 左臂（压在下面）向前搭在床上，右手留给手机（之后用 holdPhoneRight 摆）。
+ * 方向都按“站着时的身体方向”写，再经 LIE_LEFT 转到世界坐标。
+ */
+export function poseLyingLeft(c: Character, p: LieParams) {
+  const b = c.bones;
+  resetPose(c);
+  c.root.position.set(0, 0, 0);
+  c.root.updateMatrixWorld(true);
+  const B = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(LIE_LEFT);
+  // 绕骨盆转（不绕脚底的根骨骼）：和坐姿之间过渡时，人像是往侧面躺下去，上身不会先往上甩一个大弧
+  setWorldQuat(b.pelvis, LIE_LEFT.clone().multiply(worldQuat(b.pelvis)));
+  // 腿直接按世界方向摆（头朝 +X、脚朝 −X）：下面的腿贴着床面，上面的腿往下收、膝盖叠在下面那条腿上方
+  const W3 = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  aimY(b.thigh_l, W3(-0.62, -0.09, 0.78));
+  aimY(b.calf_l, W3(-0.86, 0, -0.5));
+  aimY(b.thigh_r, W3(-0.55, -0.33, 0.78));
+  aimY(b.calf_r, W3(-0.86, -0.02, -0.45));
+  aimY(b.foot_l, B(0.05, -0.25, 1));
+  aimY(b.foot_r, B(-0.05, -0.25, 1));
+  const bx = B(1, 0, 0);
+  rotateWorld(b.spine_01, bx, 5);
+  rotateWorld(b.spine_02, bx, 5);
+  rotateWorld(b.spine_03, bx, 4);
+  rotateWorld(b.neck_01, bx, p.headPitch * 0.45);
+  rotateWorld(b.Head, bx, p.headPitch * 0.55);
+  // 左臂（压在下面）：向前平放在床上、略朝头的方向，手放松
+  aimY(b.upperarm_l, W3(0.35, -0.03, 1));
+  aimY(b.lowerarm_l, W3(0.2, -0.03, 1));
+  aimY(b.hand_l, W3(0.15, -0.06, 1));
+  shareTwist(b.lowerarm_l, b.hand_l);
+  relaxFingers(c, 'l');
+  // 压在床上的一侧（左肩、左髋）落到床面上：关节到皮肤表面约 6 / 9 cm，再陷进床垫 1 cm
+  c.root.updateMatrixWorld(true);
+  const low = Math.min(worldPos(b.upperarm_l).y - 0.06, worldPos(b.thigh_l).y - 0.09);
+  const pel = worldPos(b.pelvis);
+  c.root.position.set(p.pelvisX - pel.x, p.bedY - 0.01 - low, p.backZ - pel.z);
+  c.root.updateMatrixWorld(true);
+}
+
+/** 头的右方 / 头顶 / 前方（世界坐标），给侧卧时摆手机用 */
+export function headFrame(c: Character) {
+  const { right, up } = headAxes(c);
+  return { right, up, fwd: new THREE.Vector3().crossVectors(up, right).normalize() };
+}
+
 /** 握持参数：手指走向与竖直方向的夹角、掌心向左偏转、手腕相对右下角的位置、指尖落点。 */
 export const GRIP = { beta: 55, yaw: 42, dx: 0.028, dy: -0.020, dz: -0.024, tipOut: 0.009, tipZ: 1.2 };
 
@@ -77,8 +135,8 @@ export function shareTwist(lower: THREE.Bone, hand: THREE.Bone, k = 0.5) {
   lower.updateMatrixWorld(true);
 }
 
-/** 右手握住手机（phone 为手机局部 → 世界矩阵）。返回手臂是否够得着。 */
-export function holdPhoneRight(c: Character, phone: THREE.Matrix4, d: PhoneDims): boolean {
+/** 右手握住手机（phone 为手机局部 → 世界矩阵）。返回手臂是否够得着。body：身体整体的朝向（侧卧时），用来摆肘部方向 */
+export function holdPhoneRight(c: Character, phone: THREE.Matrix4, d: PhoneDims, body?: THREE.Quaternion): boolean {
   const b = c.bones;
   const hand = phone.clone().multiply(gripMatrix(d));
   const wrist = new THREE.Vector3().setFromMatrixPosition(hand);
@@ -95,7 +153,9 @@ export function holdPhoneRight(c: Character, phone: THREE.Matrix4, d: PhoneDims)
     rotateWorld(b.clavicle_r, axis, 3);
   }
   const sh = worldPos(b.upperarm_r);
-  const ok = solveTwoBone(b.upperarm_r, b.lowerarm_r, b.hand_r, wrist, sh.clone().add(new THREE.Vector3(-0.25, -0.45, -0.15)));
+  const pole = new THREE.Vector3(-0.25, -0.45, -0.15);
+  if (body) pole.applyQuaternion(body);
+  const ok = solveTwoBone(b.upperarm_r, b.lowerarm_r, b.hand_r, wrist, sh.clone().add(pole));
   setWorldQuat(b.hand_r, handQ);
   shareTwist(b.lowerarm_r, b.hand_r);
 

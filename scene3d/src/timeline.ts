@@ -17,6 +17,7 @@ export const DEFAULT_TIMELINE: Segment[] = [
   { scene: 'normal', items: ['explain', 'eye:you', 'stereo'] },
   { scene: 'desk', items: ['explain', 'eye:you'] },
   { scene: 'subway', items: ['explain', 'eye:nb', 'priv:on'] },
+  { scene: 'side', items: ['explain', 'eye:you', 'stereo'] },
 ];
 
 type Src = { kind: 'scene' | 'item'; value: string; text?: string; from?: { seg: number; idx: number } };   // idx −1 = 场景按钮（整段）

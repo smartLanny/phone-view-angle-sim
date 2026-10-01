@@ -4,7 +4,8 @@
  */
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { loadCharacter, cloneCharacter, capturePose, applyPose, blendPose, eyeWorld, type Character, type PoseSnap } from './rig';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { loadCharacter, cloneCharacter, capturePose, applyPose, blendPose, eyeWorld, eyePair, headAxes, type Character, type PoseSnap } from './rig';
 import { simplifyBody, NEUTRAL_MALE } from './simplify';
 import { applyLook, type Look } from './look';
 import { STYLES, gradientTexture } from './styles';
@@ -13,14 +14,14 @@ import { DEVICES, type DeviceSpec } from './phone/devices';
 import { islandCenterY, rearBump } from './phone/geometry';
 import { buildApplePhone, APPLE_VARIANT } from './phone/apple';
 import { createDataPanel, type PanelProfile } from './datapanel';
-import { createModel, anglesOf, type AngData, type AngleModel, type Profile } from './optics/model';
+import { createModel, anglesOf, deltaE2000, xyzToLab, type AngData, type AngleModel, type Profile } from './optics/model';
 import { lutTexture } from './optics/screen';
 import { Annotations } from './annotate';
 import { Stereo, type StereoLayout } from './stereo';
 import { createPlayer, type Step } from './sequence';
 import { createTimeline } from './timeline';
 import { CameraRig, type ViewMode } from './camera';
-import { PRESETS, TABLE_Y, SUBWAY_SEAT, type Preset, type SceneState, type Props, type Ctx } from './presets';
+import { PRESETS, TABLE_Y, SUBWAY_SEAT, BED_Y, type Preset, type SceneState, type Props, type Ctx } from './presets';
 import { CSS } from './ui-css';
 
 export interface MountOptions {
@@ -51,6 +52,8 @@ const viewName = (id: string, sub: boolean) => ({ explain: '讲解视角', 'eye:
 const loadJSON = <T,>(key: string, fb: T): T => { try { const v = JSON.parse(localStorage.getItem(key) || 'null'); return v ?? fb; } catch { return fb; } };
 const saveJSON = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* 隐私模式等 */ } };
 /** 人眼视角的视场（竖直方向，度）：固定的自然视场，不再按手机大小缩放，手机在视野里的位置、大小随姿势和距离变化 */
+/** 侧卧场景的枕头：高度、位置（头枕在上面） */
+const PILLOW = { h: 0.22, x: 0.42, z: 0.05 };
 const EYE_FOV = 46, EYE_FOV_PORTRAIT = 58;
 /** 讲解标注（视线、距离、读数）在切换结束 / 拖动松手后保留多久再淡出（ms） */
 const ANN_HOLD = 2600;
@@ -105,7 +108,13 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   bench.add(mk(new THREE.BoxGeometry(1.7, 0.34, 0.05), benchMat, -0.35, SUBWAY_SEAT + 0.2, -0.27));
   bench.add(mk(new THREE.BoxGeometry(1.7, 0.36, 0.04), benchMat, -0.35, 0.2, 0.17));
   bench.add(mk(new THREE.CylinderGeometry(0.018, 0.018, 2.3, 16), benchMat, 0.72, 1.15, 0.22));
-  scene.add(stool, table, bench);
+  // 床（侧卧场景，头朝 +X）：床垫、床架、枕头
+  const bedMat = propMat();
+  const bed = new THREE.Group();
+  bed.add(mk(new RoundedBoxGeometry(2.0, 0.2, 1.2, 4, 0.05), bedMat, -0.25, BED_Y - 0.1, 0.12));
+  bed.add(mk(new THREE.BoxGeometry(2.06, 0.24, 1.26), bedMat, -0.25, BED_Y - 0.32, 0.12));
+  bed.add(mk(new RoundedBoxGeometry(0.4, PILLOW.h, 0.62, 5, 0.05), bedMat, PILLOW.x, BED_Y + PILLOW.h / 2 - 0.02, PILLOW.z));
+  scene.add(stool, table, bench, bed);
   // 阴影按透明度抖动着淡入淡出（VSM 阴影会模糊，看不出颗粒）：阴影渲染默认不认 alphaHash，给每个道具配一个带 alphaHash 的深度材质
   const propDepth = (obj: THREE.Object3D) => {
     const d = new THREE.MeshDepthMaterial({ alphaHash: true });
@@ -124,6 +133,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     stool: { obj: stool, mat: stoolMat, depth: propDepth(stool), over: overPass(stool, stoolMat) },
     table: { obj: table, mat: tableMat, depth: propDepth(table), over: overPass(table, tableMat) },
     bench: { obj: bench, mat: benchMat, depth: propDepth(bench), over: overPass(bench, benchMat) },
+    bed: { obj: bed, mat: bedMat, depth: propDepth(bed), over: overPass(bed, bedMat) },
   };
   const setProps = (p: Props) => {
     for (const [k, { obj, mat, depth, over }] of Object.entries(propObjs)) {
@@ -234,7 +244,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     <div class="s3d-hud">
       <div class="s3d-scene" data-k="scene"></div>
       <div class="s3d-hero"><span data-k="theta">0°</span><span class="s3d-hero-sub" data-k="where"></span></div>
-      <div class="s3d-stats"><span><i>亮度</i><b data-k="lum">100%</b></span><span><i>色偏</i><b data-k="jncd">0.0</b><i>JNCD</i></span><span><i>ΔE2000</i><b data-k="de">0.0</b></span></div>
+      <div class="s3d-stats"><span><i>亮度</i><b data-k="lum">100%</b></span><span><i>色偏</i><b data-k="jncd">0.0</b><i>JNCD</i></span><span><i data-k="deK">ΔE2000</i><b data-k="de">0.0</b></span></div>
       <div class="s3d-note" data-k="note"></div>
       <div class="s3d-warn" data-k="warn"></div>
     </div>
@@ -277,13 +287,15 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const data = createDataPanel(ui, model.thetaMax);
 
   // ---------- 场景状态与过渡 ----------
-  type Snap = { you: PoseSnap; nb: PoseSnap | null; phone: THREE.Matrix4; props: Props; nbAlpha: number; cam: { pos: THREE.Vector3; target: THREE.Vector3 } };
+  type Snap = { you: PoseSnap; nb: PoseSnap | null; phone: THREE.Matrix4; props: Props; nbAlpha: number; lie: number; cam: { pos: THREE.Vector3; target: THREE.Vector3 } };
   const params: Record<string, Record<string, number>> = Object.fromEntries(PRESETS.map((p) => [p.id, { ...p.defaults }]));
   let preset: Preset = PRESETS.find((p) => p.id === opts.scene) || PRESETS[1];
   let viewer: Viewer = 'nb';
   let state!: SceneState;
   let phoneM = new THREE.Matrix4();
-  let props: Props = { stool: 0, table: 0, bench: 0 };
+  let props: Props = { stool: 0, table: 0, bench: 0, bed: 0 };
+  /** 躺着的程度（0 坐着 → 1 侧卧，过渡中渐变）：人眼视角的“上”从世界竖直方向渐渐换成头顶方向 */
+  let lieW = 0;
   let nbAlpha = 0;
   let figFade = 1, fadeFrom = 1, fadeTo = 1, fadeT0 = 0, fadeDur = 300;
   let trans: null | { a: Snap; b: SceneState; t0: number; dur: number; p?: number; grip?: [THREE.Matrix4, THREE.Matrix4] | null; gripFor?: SceneState } = null;
@@ -298,7 +310,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     return s;
   };
   const snapNow = (): Snap => ({
-    you: capturePose(you), nb: nbAlpha > 0.01 ? capturePose(nb) : null, phone: phoneM.clone(), props: { ...props }, nbAlpha,
+    you: capturePose(you), nb: nbAlpha > 0.01 ? capturePose(nb) : null, phone: phoneM.clone(), props: { ...props }, nbAlpha, lie: lieW,
     cam: rig.getExplain(),
   });
   const startFade = (to: number, ms = 300) => { fadeFrom = figFade; fadeTo = to; fadeT0 = performance.now(); fadeDur = ms; };
@@ -310,6 +322,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     phoneM = s.phone.clone();
     props = { ...s.props };
     nbAlpha = s.nb ? 1 : 0;
+    lieW = s.lying ? 1 : 0;
     if (resetCam) rig.setExplain(s.explain.pos, s.explain.target, s.explain.fov);
   };
 
@@ -376,6 +389,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     }
     for (const k of Object.keys(props) as (keyof Props)[]) props[k] = a.props[k] + (b.props[k] - a.props[k]) * e;
     nbAlpha = a.nbAlpha + ((b.nb ? 1 : 0) - a.nbAlpha) * e;
+    lieW = a.lie + ((b.lying ? 1 : 0) - a.lie) * e;
     rig.setExplain(a.cam.pos.clone().lerp(b.explain.pos, e), a.cam.target.clone().lerp(b.explain.target, e), b.explain.fov);
     if (raw >= 1 && trans.p === undefined) {
       trans = null;
@@ -485,7 +499,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     if (!active || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) return;
     const k = e.key.toLowerCase();
     if (k === 'h') host.classList.toggle('clean');
-    else if (/^[1-4]$/.test(k)) goto(PRESETS[+k - 1]);
+    else if (/^[1-9]$/.test(k) && PRESETS[+k - 1]) goto(PRESETS[+k - 1]);
     else if (k === ' ') { if (player.playing) player.stop(); else void player.play(steps()); }
     else if (k === 'v') {
       const opts2 = preset.id === 'subway' ? ['explain', 'eye:nb', 'eye:you'] : ['explain', 'eye:you'];
@@ -757,10 +771,19 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const hf = new THREE.Vector3(0, 0, 1).applyQuaternion(c.bones.Head.getWorldQuaternion(new THREE.Quaternion())).normalize();
     const ds = target.clone().sub(eye).normalize();
     const flat = new THREE.Vector3(ds.x, 0, ds.z);
-    if (flat.lengthSq() < 1e-4) return { fwd: ds, up: new THREE.Vector3(0, 0, -1) };
-    flat.normalize();
-    const elev = Math.asin(THREE.MathUtils.clamp(hf.y, -1, 1));
-    return { fwd: flat.multiplyScalar(Math.cos(elev)).add(new THREE.Vector3(0, Math.sin(elev), 0)).normalize(), up: new THREE.Vector3(0, 1, 0) };
+    let fwd = ds, up = new THREE.Vector3(0, 0, -1);
+    if (flat.lengthSq() >= 1e-4) {
+      flat.normalize();
+      const elev = Math.asin(THREE.MathUtils.clamp(hf.y, -1, 1));
+      fwd = flat.multiplyScalar(Math.cos(elev)).add(new THREE.Vector3(0, Math.sin(elev), 0)).normalize();
+      up = new THREE.Vector3(0, 1, 0);
+    }
+    // 躺着：镜头直接对着手机，“上”跟着头顶（躺着的人看手机，手机是正的），坐着 ↔ 躺着之间渐变
+    if (c === you && lieW > 0) {
+      fwd = fwd.clone().lerp(ds, lieW).normalize();
+      up = up.clone().lerp(headAxes(c).up, lieW).normalize();
+    }
+    return { fwd, up };
   };
   // 讲解标注：切换结束 / 拖动松手后保留一会儿再淡出
   let annUntil = performance.now() + ANN_HOLD + 600, annAlpha = 1, lastFrame = performance.now(), wasExplain = true, reachFade = 1;
@@ -839,11 +862,17 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       u.uEye.value.copy(mainEye).applyMatrix4(inv);
       u.uChroma.value = 1;
     }
-    // 地铁场景：右侧两个小窗，旁人看到的、你看到的各渲染一次（先画到画布左下角再拷到小窗自己的画布，之后主画面会把那一块盖掉）
-    const insetOn = !!(sub && eyeNb && !stereoOn);
-    if (insetOn && eyeNb) {
+    // 右侧两个小窗：地铁场景是旁人看到的 / 你看到的，侧卧是右眼（上）/ 左眼（下）看到的。
+    // 各渲染一次（先画到画布左下角再拷到小窗自己的画布，之后主画面会把那一块盖掉）
+    const lie = !trans && !!state.lying;
+    const eyesLR = lie ? eyePair(you, stereo.ipd) : null;
+    const insetViews: { eye: THREE.Vector3; label: string; hide: Viewer }[] | null = stereoOn ? null
+      : sub && eyeNb ? [{ eye: eyeNb, label: '旁人看到的', hide: 'nb' }, { eye: eyeYou, label: '你看到的', hide: 'you' }]
+      : eyesLR ? [{ eye: eyesLR[1], label: '右眼（上）', hide: 'you' }, { eye: eyesLR[0], label: '左眼（下）', hide: 'you' }] : null;
+    const insetOn = !!insetViews;
+    if (insetViews) {
       const narrow = W < 700;
-      const top = narrow ? 112 : 72 * uiK, capH = narrow ? 36 : 26 * uiK, gap = (narrow ? 8 : 12) * uiK, bottomRes = narrow ? 140 : 100 * uiK;
+      const top = narrow ? 112 : 72 * uiK, capH = (narrow ? 36 : rig.mode === 'eye' ? 50 : 42) * (narrow ? 1 : uiK), gap = (narrow ? 8 : 12) * uiK, bottomRes = narrow ? 140 : 100 * uiK;   // 小窗下方两行说明：名称、读数
       let iw = Math.round(Math.min(280 * uiK, W * (narrow ? 0.3 : 0.2))), ih = Math.round(iw * 1.25);
       const maxIh = Math.floor((H - top - bottomRes - 2 * capH - gap) / 2);
       if (ih > maxIh) { ih = Math.max(60, maxIh); iw = Math.round(ih / 1.25); }
@@ -851,7 +880,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       const pr = renderer.getPixelRatio(), iwPx = Math.round(iw * pr), ihPx = Math.round(ih * pr);
       ann.setVisible(false);
       insets.forEach((it, i) => {
-        const eyeP = it.who === 'nb' ? eyeNb : eyeYou;
+        const v = insetViews[i], eyeP = v.eye;
         it.rect = [x, top + i * (ih + capH + gap), iw, ih];
         insetCam.position.copy(eyeP);
         insetCam.up.copy(up);
@@ -861,8 +890,8 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
         insetCam.updateProjectionMatrix();
         insetCam.updateMatrixWorld();
         u.uEye.value.copy(eyeP).applyMatrix4(inv);
-        lookYou.setHead(headOf(you, eyeYou), insetCam, it.who === 'you' ? 1 : 0);
-        lookNb.setHead(headOf(nb, eyeNb), insetCam, it.who === 'nb' ? 1 : 0);
+        lookYou.setHead(headOf(you, eyeYou), insetCam, v.hide === 'you' ? 1 : 0);
+        if (eyeNb) lookNb.setHead(headOf(nb, eyeNb), insetCam, v.hide === 'nb' ? 1 : 0);
         renderer.setScissorTest(true);
         renderer.setScissor(0, 0, iw, ih);
         renderer.setViewport(0, 0, iw, ih);
@@ -875,7 +904,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
         it.g.drawImage(renderer.domElement, 0, renderer.domElement.height - ihPx, iwPx, ihPx, 0, 0, iwPx, ihPx);
         const a = anglesOf(eyeP.clone().applyMatrix4(inv));
         const ev = model.evalAt(a.theta, a.psi);
-        const html = `<b>${it.who === 'nb' ? '旁人' : '你'}看到的</b><span>亮度 <b>${Math.round(ev.yRatio * 100)}%</b> · ${a.theta.toFixed(0)}°</span>`;
+        const html = `<b>${v.label}</b><span>亮度 <b>${Math.round(ev.yRatio * 100)}%</b> · 色偏 <b>${ev.jncd.toFixed(1)}</b> · ${a.theta.toFixed(0)}°</span>`;
         if (it.cap.dataset.html !== html) { it.cap.innerHTML = html; it.cap.dataset.html = html; }
       });
       u.uEye.value.copy(mainEye).applyMatrix4(inv);
@@ -883,7 +912,9 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     lookYou.setHead(headOf(you, eyeYou), rig.camera, mainViewer === 'you' || switching ? camFade : 0);
     lookNb.setHead(eyeNb ? headOf(nb, eyeNb) : eyeYou, rig.camera, mainViewer === 'nb' || switching ? camFade : 0);
 
-    const probes = ann.update(mainEye, phoneM, phone.half, model, otherEye ? { eye: otherEye, name: mainViewer === 'nb' ? '你' : '旁人' } : null);
+    // 侧卧：讲解视角里标左眼（下）的三条视线，右眼（上）再画一条到屏幕中心
+    const annEye = eyesLR ? eyesLR[0] : mainEye;
+    const probes = ann.update(annEye, phoneM, phone.half, model, eyesLR ? { eye: eyesLR[1], name: '右眼' } : otherEye ? { eye: otherEye, name: mainViewer === 'nb' ? '你' : '旁人' } : null);
     // 标注：过渡中、拖动中显示；结束后保留一会儿淡出。回到讲解视角时重新显示一会儿
     const dt = Math.min(100, now - lastFrame); lastFrame = now;
     const isExplain = rig.progress < 0.05;
@@ -897,7 +928,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, W, H);
     if (!covered) renderer.render(scene, rig.camera);
-    ann.layout(rig.camera, mainEye, phoneM, phone.half, W, H);
+    ann.layout(rig.camera, annEye, phoneM, phone.half, W, H);
 
     // 数据面板（打开时才算）
     if (data.visible) {
@@ -911,6 +942,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       const eyes = [{ ...am, who: sub ? (mainViewer === 'nb' ? '旁人' : '你') : '眼睛' }];
       if (otherEye && !stereoOn) eyes.push({ ...anglesOf(otherEye.clone().applyMatrix4(inv)), who: mainViewer === 'nb' ? '你' : '旁人' });
       if (stereoOn && stereo.reads) eyes.splice(0, 1, ...stereo.reads.map((r, i) => ({ ...anglesOf(r.eye.clone().applyMatrix4(inv)), who: i ? '右眼' : '左眼' })));
+      else if (eyesLR) eyes.splice(0, 1, ...eyesLR.map((e, i) => ({ ...anglesOf(e.clone().applyMatrix4(inv)), who: i ? '右眼' : '左眼' })));
       data.update(panelProfiles, eyes, JMAX, device.name);
     }
 
@@ -925,11 +957,22 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const c = probes[1];
     $('theta').textContent = `${c.theta.toFixed(0)}°`;
     $('where').textContent = sub ? `${mainViewer === 'nb' ? '旁人' : '你'}看屏幕中心的离轴角` : '屏幕中心离轴角';
+    $('deK').textContent = 'ΔE2000';
     $('scene').textContent = rig.mode === 'eye' ? (sub ? `${mainViewer === 'nb' ? '旁人' : '你'}看到的屏幕` : `${preset.name} · 眼睛看到的屏幕`) : preset.name;
     $('lum').textContent = `${Math.round(c.ev.yRatio * 100)}%`;
     $('jncd').textContent = c.ev.jncd.toFixed(1);
     $('de').textContent = c.ev.de00.toFixed(1);
     $('warn').textContent = c.ev.clamped ? '超出实测范围（> 70°），按 70° 计' : '';
+    if (eyesLR) {     // 侧卧：两只眼睛分别的读数，ΔE2000 为两眼之间的色差
+      const r = eyesLR.map((e) => { const a = anglesOf(e.clone().applyMatrix4(inv)); return { theta: a.theta, ev: model.evalAt(a.theta, a.psi) }; });
+      $('theta').textContent = `${r[0].theta.toFixed(0)}° / ${r[1].theta.toFixed(0)}°`;
+      $('where').textContent = '左眼（下）/ 右眼（上）离轴角';
+      $('lum').textContent = `${Math.round(r[0].ev.yRatio * 100)}% / ${Math.round(r[1].ev.yRatio * 100)}%`;
+      $('jncd').textContent = `${r[0].ev.jncd.toFixed(1)} / ${r[1].ev.jncd.toFixed(1)}`;
+      $('deK').textContent = '两眼 ΔE2000';
+      $('de').textContent = deltaE2000(xyzToLab(r[0].ev.W, model.ref.W), xyzToLab(r[1].ev.W, model.ref.W)).toFixed(1);
+      $('warn').textContent = r.some((x) => x.ev.clamped) ? '超出实测范围（> 70°），按 70° 计' : '';
+    }
     if (++frames === 2) readyResolve();
   };
   renderer.setAnimationLoop(frame);
@@ -938,6 +981,8 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     ready, renderer, scene, rig,
     get state() { return state; },
     get eye() { return eyeWorld(you); },
+    /** 调试：人物（骨骼、姿势） */
+    get you() { return you; },
     get phoneMatrix() { return phoneM.clone(); },
     setScene(id: string, animate = true) { const p = PRESETS.find((q) => q.id === id); if (p) goto(p, animate); },
     setView, setViewer, setPattern,

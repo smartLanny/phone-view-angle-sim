@@ -21,6 +21,7 @@ export const CSS = /* css */ `
 .s3d.clean .s3d-inset-cap { display: none; }
 .s3d-scene { font-size: 13px; font-weight: 600; color: var(--t2); letter-spacing: .02em; }
 .s3d-hero { display: flex; align-items: baseline; gap: 10px; margin-top: 8px; }
+.s3d-hero [data-k="theta"] { white-space: nowrap; }
 .s3d-hero [data-k="theta"] { font-size: 48px; font-weight: 600; line-height: 1; letter-spacing: -.02em; }
 .s3d-hero-sub { font-size: 13px; color: var(--t2); }
 .s3d-stats { display: flex; gap: 16px; margin-top: 10px; font-size: 13px; }
@@ -115,7 +116,7 @@ export const CSS = /* css */ `
 .s3d-inset { position: absolute; display: none; pointer-events: none; border-radius: 12px; border: 1px solid rgba(255,157,77,.55); box-shadow: 0 10px 30px rgba(0,0,0,.45); }
 .s3d-inset[data-who="you"] { border-color: color-mix(in srgb, var(--ac) 60%, transparent); }
 .s3d-inset-cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 11px; }
-.s3d-inset-cap { position: absolute; left: 0; right: 0; bottom: -1px; transform: translateY(100%); padding: 6px 2px 0; font-size: calc(12px * var(--k)); display: flex; justify-content: space-between; gap: 8px; }
+.s3d-inset-cap { position: absolute; left: 0; right: 0; bottom: -1px; transform: translateY(100%); padding: 6px 2px 0; font-size: calc(12px * var(--k)); display: flex; flex-direction: column; gap: 1px; white-space: nowrap; }
 .s3d-inset-cap b { font-weight: 600; }
 .s3d-inset-cap span { color: var(--t2); font-variant-numeric: tabular-nums; }
 

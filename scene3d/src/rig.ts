@@ -16,6 +16,9 @@ export interface Character {
   meshes: THREE.SkinnedMesh[];
   /** 两眼中点在 Head 骨骼局部坐标里的位置（由眼球网格的绑定姿态求得）。 */
   eyeLocal: THREE.Vector3;
+  /** 人物的右方（右眼方向）、头顶方向在 Head 骨骼局部坐标里的方向（站立时分别是世界 −X、+Y） */
+  headRightLocal: THREE.Vector3;
+  headUpLocal: THREE.Vector3;
   rest: Map<THREE.Bone, THREE.Quaternion>;
 }
 
@@ -54,10 +57,13 @@ export async function loadCharacter(src: string | object, hairUrls: string[] = [
   const eyeRest = new THREE.Vector3(0, 1.656, 0.06);
   if (eyes) { eyes.geometry.computeBoundingBox(); eyes.geometry.boundingBox!.getCenter(eyeRest); }
   const eyeLocal = bones.Head.worldToLocal(eyeRest.clone());
+  const headQi = bones.Head.getWorldQuaternion(new THREE.Quaternion()).invert();
+  const headRightLocal = new THREE.Vector3(-1, 0, 0).applyQuaternion(headQi);
+  const headUpLocal = new THREE.Vector3(0, 1, 0).applyQuaternion(headQi);
   const rest = new Map<THREE.Bone, THREE.Quaternion>();
   for (const b of Object.values(bones)) rest.set(b, b.quaternion.clone());
   for (const m of meshes) { m.frustumCulled = false; m.castShadow = true; m.receiveShadow = true; }
-  return { root, bones, meshes, eyeLocal, rest };
+  return { root, bones, meshes, eyeLocal, headRightLocal, headUpLocal, rest };
 }
 
 export function resetPose(c: Character) {
@@ -123,6 +129,18 @@ export function eyeWorld(c: Character) {
   return c.bones.Head.localToWorld(c.eyeLocal.clone());
 }
 
+/** 头的右方、头顶方向（世界坐标，单位向量）。 */
+export function headAxes(c: Character) {
+  const q = c.bones.Head.getWorldQuaternion(new THREE.Quaternion());
+  return { right: c.headRightLocal.clone().applyQuaternion(q).normalize(), up: c.headUpLocal.clone().applyQuaternion(q).normalize() };
+}
+
+/** 左眼、右眼（世界坐标）：从两眼中点沿头的右方各偏半个瞳距。 */
+export function eyePair(c: Character, ipd = 0.063): [THREE.Vector3, THREE.Vector3] {
+  const m = eyeWorld(c), r = headAxes(c).right;
+  return [m.clone().addScaledVector(r, -ipd / 2), m.clone().addScaledVector(r, ipd / 2)];
+}
+
 /** 复制一个人物（共用几何体，骨骼独立），用于地铁场景的旁座乘客。 */
 export function cloneCharacter(c: Character): Character {
   const root = cloneSkinned(c.root);
@@ -135,7 +153,7 @@ export function cloneCharacter(c: Character): Character {
   const rest = new Map<THREE.Bone, THREE.Quaternion>();
   for (const [b, q] of c.rest) rest.set(bones[b.name], q.clone());
   for (const m of meshes) { m.frustumCulled = false; m.castShadow = true; m.receiveShadow = true; }
-  return { root, bones, meshes, eyeLocal: c.eyeLocal.clone(), rest };
+  return { root, bones, meshes, eyeLocal: c.eyeLocal.clone(), headRightLocal: c.headRightLocal.clone(), headUpLocal: c.headUpLocal.clone(), rest };
 }
 
 /** 姿势快照：根节点位置 + 每根骨骼的局部旋转，用于场景之间插值。 */

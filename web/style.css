@@ -325,6 +325,9 @@ body.clean #hud { position: fixed; left: 28px; top: 24px; padding: 0; }
 }
 
 /* ================= 模式切换：场景演示（三维） / 屏幕仿真 ================= */
+/* 默认是屏幕仿真，切换只在三维场景里显示（从“画面 → 更多”进入三维场景） */
+body:not(.mode-3d) .app-mode { display: none; }
+.more-btn { margin-top: 10px; width: 100%; }
 .app-mode { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 40;
   background: var(--surface); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
 .app-mode button { padding: 7px 16px; }
@@ -335,8 +338,6 @@ body.mode-3d .app-mode { top: calc(14px * var(--s3d-k, 1)); transform: translate
 body.mode-3d #scene3d { display: block; }
 body.mode-3d #gl, body.mode-3d #rail, body.mode-3d #panel, body.mode-3d #hud, body.mode-3d .caption,
 body.mode-3d #tip, body.mode-3d #tip2, body.mode-3d #hint, body.mode-3d .sframe { display: none !important; }
-/* 屏幕仿真模式里，顶部提示让出模式切换的位置 */
-body:not(.mode-3d) #hint { top: 62px; }
 @media (max-width: 1179px) {
   .app-mode { left: auto; right: 12px; transform: none; }
   body[data-layout="side"] .app-mode { right: 344px; }

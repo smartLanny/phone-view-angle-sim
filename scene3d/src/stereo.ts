@@ -205,8 +205,9 @@ export class Stereo {
 
     // ---------- 两只眼睛：从中点逐渐分到各自的位置 ----------
     const dir = o.screen.clone().sub(o.eye).normalize();
-    let right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
-    if (right.lengthSq() < 1e-6) right = new THREE.Vector3().crossVectors(dir, o.up);
+    // 两眼连线：垂直于视线和人眼视角镜头的“上”（坐着时就是水平方向；侧卧时“上”是头顶方向，两眼上下分开）
+    let right = new THREE.Vector3().crossVectors(dir, o.up);
+    if (right.lengthSq() < 1e-6) right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
     right.normalize();
     // 两只眼睛共用中点视线的“上”方向（垂直于视线和两眼连线）：两眼只差一个绕这个轴的转角，
     // 不会因为低头看手机而互相歪斜（用世界“上”会让两眼画面差一个旋转，整块屏幕都对不齐）

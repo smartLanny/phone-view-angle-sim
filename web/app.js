@@ -1260,7 +1260,7 @@
       if (S.rot) q.set('rot', S.rot);
       if (S.padMetric !== 'lum') q.set('k', S.padMetric);
       if (S.pal !== 'jet') q.set('pal', S.pal);
-      if (appMode !== 'scene') q.set('mode', 'sim');
+      if (appMode === 'scene') q.set('mode', '3d');
       try { history.replaceState(null, '', '#' + q.toString()); } catch (err) { /* file:// 下个别浏览器不允许 */ }
     }, 300);
   }
@@ -1280,16 +1280,23 @@
     S.rot = num('rot', 0) === 90 ? 90 : 0;
     if (q.get('k') === 'jncd') S.padMetric = 'jncd';
     if (Viz.PALETTES[q.get('pal')]) S.pal = q.get('pal');
-    appMode = q.get('mode') === 'sim' ? 'sim' : 'scene';
+    appMode = /^(3d|scene)$/.test(q.get('mode') || '') ? 'scene' : 'sim';
     setView(num('t', 0), num('p', 0));
     syncSeg('mode', S.mode); syncSeg('orient', S.rot); syncSeg('padMetric', S.padMetric);
   }
 
-  // ---------- 模式：场景演示（三维，scene3d.js）/ 屏幕仿真（本页原有工具） ----------
-  let appMode = 'scene', scene3d = null, scene3dLoading = null;
+  // ---------- 模式：屏幕仿真（默认，本页原有工具）/ 场景演示（三维，scene3d.js，做动画用，从“画面 → 更多”进入） ----------
+  let appMode = 'sim', scene3d = null, scene3dLoading = null;
+  const S3D_VER = 5;
+  const loadScript = (src) => new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error('无法加载 ' + src));
+    document.body.appendChild(s);
+  });
+  // 三维场景的脚本（约 1.7 MB）只在第一次进入场景演示时加载
+  const loadScene3D = () => (window.Scene3D ? Promise.resolve()
+    : loadScript('scene3d-person.js?v=' + S3D_VER).then(() => loadScript('scene3d.js?v=' + S3D_VER)));
   function setAppMode(m) {
-    // 三维模块没加载成功（或浏览器不支持 WebGL2）时退回屏幕仿真
-    if (m === 'scene' && !window.Scene3D) m = 'sim';
     appMode = m;
     document.body.classList.toggle('mode-3d', m === 'scene');
     syncSeg('appMode', m);
@@ -1298,9 +1305,10 @@
       if (scene3d) scene3d.resume();
       else if (!scene3dLoading) {
         $('scene3d').classList.add('loading');
-        scene3dLoading = window.Scene3D.mount($('scene3d'))
+        // 加载失败（或浏览器不支持 WebGL2）时退回屏幕仿真
+        scene3dLoading = loadScene3D().then(() => window.Scene3D.mount($('scene3d')))
           .then((a) => { scene3d = a; window.scene3d = a; $('scene3d').classList.remove('loading'); })
-          .catch((err) => { console.error(err); scene3dLoading = null; toast('三维场景加载失败，已切回屏幕仿真'); setAppMode('sim'); });
+          .catch((err) => { console.error(err); scene3dLoading = null; $('scene3d').classList.remove('loading'); toast('三维场景加载失败，已切回屏幕仿真'); setAppMode('sim'); });
       }
     } else {
       if (scene3d) scene3d.pause();
@@ -1309,6 +1317,7 @@
     writeHash();
   }
   bindSeg('appMode', (v) => setAppMode(v));
+  $('open3d').addEventListener('click', () => setAppMode('scene'));
 
   // ---------- 启动 ----------
   window.addEventListener('resize', resize);
