@@ -313,7 +313,8 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     if (!animate || !state) { preset = p; applySteady(target, true); describe(); startFade(FADE_TO, 1); return; }
     trans = { a: snapNow(), b: target, t0: performance.now(), dur: TRANSITION_MS };
     preset = p;
-    startFade(1, 200);            // 切换开始时人物淡回不透明
+    // 讲解视角：切换开始时人物慢慢淡回不透明，看清姿势变化；人眼视角 / 双眼视差：保持半透明，不闪
+    if (rig.mode === 'explain' && !stereo.active) startFade(1, 450);
     describe();
   };
 
@@ -335,7 +336,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     if (raw >= 1 && trans.p === undefined) {
       trans = null;
       applySteady(b, true);
-      startFade(FADE_TO, 300);    // 切换结束后约 0.3 s 内淡到半透明，焦点回到屏幕
+      startFade(FADE_TO, 700);    // 切换结束后慢慢淡到半透明，焦点回到屏幕
       pokeAnn();
     }
   };
@@ -558,15 +559,18 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   // 场景 / 视角按钮：点击直接切换，左右拖动调整顺序；“▶ 播放”按场景顺序、每个场景里按视角顺序各展示一遍
   // 编排时间线：从工具栏拖按钮上来插入，左右拖排序，拖出删除；播放按时间线走
   const sceneName = (id: string) => PRESETS.find((p) => p.id === id)?.name || id;
-  const itemName = (id: string, sc: string) => id.startsWith('dev:') ? (DEVICES.find((d) => d.id === id.slice(4))?.name.split(' ')[0] || id) : viewName(id, sc === 'subway');
+  const itemName = (id: string, sc: string) => id.startsWith('dev:') ? (DEVICES.find((d) => d.id === id.slice(4))?.name.split(' ')[0] || id)
+    : id.startsWith('priv:') ? (id === 'priv:on' ? '防窥 开' : '防窥 关') : viewName(id, sc === 'subway');
   const tl = createTimeline($('tl'), {
     labels: { scene: sceneName, item: itemName },
     validScene: (id) => PRESETS.some((p) => p.id === id),
-    validItem: (id) => VIEW_IDS.includes(id) || (id.startsWith('dev:') && DEVICES.some((d) => d.id === id.slice(4))),
+    validItem: (id) => VIEW_IDS.includes(id) || id === 'priv:on' || id === 'priv:off' || (id.startsWith('dev:') && DEVICES.some((d) => d.id === id.slice(4))),
     sources: [
       { el: $('scenes'), kind: 'scene' },
       { el: $('views'), kind: 'item' },
       { el: $('devices'), kind: 'item', map: (v) => 'dev:' + v },
+      // 防窥开关：拖上去的是它现在的状态
+      { el: $('privacyRow'), kind: 'item', pick: () => ({ value: privEl.checked ? 'priv:on' : 'priv:off', text: privEl.checked ? '防窥 开' : '防窥 关' }) },
     ],
     open: () => setTl(true),
     jump: (sg, idx) => {
@@ -576,7 +580,11 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       if (it) applyItem(it);
     },
   });
-  const applyItem = (it: string) => { if (it.startsWith('dev:')) void setDevice(it.slice(4)); else pickView(it); };
+  const applyItem = (it: string) => {
+    if (it.startsWith('dev:')) void setDevice(it.slice(4));
+    else if (it.startsWith('priv:')) { if (hasPrivacy()) { privacy = it === 'priv:on'; syncDeviceUI(); useProfile(); } }
+    else pickView(it);
+  };
   const steps = (): Step[] => tl.segments.flatMap((sg, i): Step[] => sg.items.length
     ? sg.items.map((it, j): Step => (j === 0 ? { scene: sg.scene, item: it, seg: i, idx: j } : { item: it, seg: i, idx: j }))
     : [{ scene: sg.scene, seg: i, idx: -1 }]);
@@ -664,10 +672,18 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   let readyResolve!: () => void;
   const ready = new Promise<void>((r) => { readyResolve = r; });
   const headOf = (c: Character, eye: THREE.Vector3) => eye.clone().add(new THREE.Vector3(0, 0.02, -0.08).applyQuaternion(c.bones.Head.getWorldQuaternion(tmpQ)));
-  /** 头的朝向（人眼视角的镜头方向跟着头走，而不是一直对准手机） */
-  const headAxes = (c: Character) => {
-    const q = c.bones.Head.getWorldQuaternion(new THREE.Quaternion());
-    return { fwd: new THREE.Vector3(0, 0, 1).applyQuaternion(q).normalize(), up: new THREE.Vector3(0, 1, 0).applyQuaternion(q).normalize() };
+  /**
+   * 人眼视角的镜头方向：左右对准手机（不跟头的左右偏转和歪斜，画面保持水平、手机不斜），
+   * 上下用头的俯仰——所以正视时手机在正前方，正常手持时在视野偏下（头低得比视线少），放在桌上时头直接看着手机。
+   */
+  const eyeAxes = (c: Character, eye: THREE.Vector3, target: THREE.Vector3) => {
+    const hf = new THREE.Vector3(0, 0, 1).applyQuaternion(c.bones.Head.getWorldQuaternion(new THREE.Quaternion())).normalize();
+    const ds = target.clone().sub(eye).normalize();
+    const flat = new THREE.Vector3(ds.x, 0, ds.z);
+    if (flat.lengthSq() < 1e-4) return { fwd: ds, up: new THREE.Vector3(0, 0, -1) };
+    flat.normalize();
+    const elev = Math.asin(THREE.MathUtils.clamp(hf.y, -1, 1));
+    return { fwd: flat.multiplyScalar(Math.cos(elev)).add(new THREE.Vector3(0, Math.sin(elev), 0)).normalize(), up: new THREE.Vector3(0, 1, 0) };
   };
   // 讲解标注：切换结束 / 拖动松手后保留一会儿再淡出
   let annUntil = performance.now() + ANN_HOLD + 600, annAlpha = 1, lastFrame = performance.now(), wasExplain = true;
@@ -696,7 +712,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const sub = preset.id === 'subway' && !!eyeNb && !trans;
     const mainViewer: Viewer = sub ? viewer : 'you';
     let mainEye = mainViewer === 'nb' && eyeNb ? eyeNb : eyeYou;
-    const axes = headAxes(mainViewer === 'nb' && eyeNb ? nb : you);
+    const axes = eyeAxes(mainViewer === 'nb' && eyeNb ? nb : you, mainEye, new THREE.Vector3().setFromMatrixPosition(phoneM));
     let camFwd = axes.fwd, camUp = axes.up;
     if (lastViewer && mainViewer !== lastViewer && rig.progress > 0) eyeSwitch = { from: lastCamEye.clone(), fromFwd: lastCamFwd.clone(), fromUp: lastCamUp.clone(), t0: now };
     lastViewer = mainViewer;

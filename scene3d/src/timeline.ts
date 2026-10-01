@@ -1,7 +1,8 @@
 /*
  * 编排：自动播放的时间线（工具栏上方的一条）。
  * 由若干“段”组成，每段是一个场景，后面跟着这一段里依次展示的视角 / 机型（例如 正常手持：讲解视角 → 人眼视角 → 双眼视差）。
- *   - 从下方工具栏把场景、视角、机型按钮拖上来插入（场景 = 新的一段，视角 / 机型 = 插到某一段里的某个位置）
+ *   - 从下方工具栏把场景、视角、机型按钮拖上来插入（场景 = 新的一段，视角 / 机型 = 插到某一段里的某个位置）；
+ *     “防窥”开关拖上来插入的是它当前的状态（先把开关拨到想要的状态再拖）
  *   - 时间线里的按钮左右拖动调整顺序（场景按钮带着整段一起移动），拖出时间线就删除
  *   - 点一下跳到那一步
  * 触屏先长按再拖。时间线存在本机浏览器里。
@@ -15,17 +16,17 @@ export const DEFAULT_TIMELINE: Segment[] = [
   { scene: 'front', items: ['explain', 'eye:you'] },
   { scene: 'normal', items: ['explain', 'eye:you', 'stereo'] },
   { scene: 'desk', items: ['explain', 'eye:you'] },
-  { scene: 'subway', items: ['explain', 'eye:nb'] },
+  { scene: 'subway', items: ['explain', 'eye:nb', 'priv:on'] },
 ];
 
-type Src = { kind: 'scene' | 'item'; value: string; from?: { seg: number; idx: number } };   // idx −1 = 场景按钮（整段）
+type Src = { kind: 'scene' | 'item'; value: string; text?: string; from?: { seg: number; idx: number } };   // idx −1 = 场景按钮（整段）
 
 export function createTimeline(box: HTMLElement, opts: {
   labels: Labels;
   validScene(id: string): boolean;
   validItem(id: string): boolean;
-  /** 工具栏里可以拖上来的按钮所在的容器，以及按钮代表什么 */
-  sources: { el: HTMLElement; kind: 'scene' | 'item'; map?: (v: string) => string }[];
+  /** 工具栏里可以拖上来的按钮所在的容器，以及按钮代表什么；pick 用于不是按钮的控件（如防窥开关），返回拖出去的值和显示的文字 */
+  sources: { el: HTMLElement; kind: 'scene' | 'item'; map?: (v: string) => string; pick?: () => { value: string; text: string } }[];
   open(): void;
   jump(seg: Segment, idx: number): void;
   onChange?(): void;
@@ -54,7 +55,7 @@ export function createTimeline(box: HTMLElement, opts: {
   function render() {
     strip.innerHTML = segs.map((s, i) => `<div class="tl-seg" data-seg="${i}">
         <span class="tl-chip tl-scene${cur?.seg === i && cur.idx === -1 ? ' cur' : ''}" data-seg="${i}" data-idx="-1">${opts.labels.scene(s.scene)}</span>${s.items.map((it, j) =>
-          `<span class="tl-chip${cur?.seg === i && cur.idx === j ? ' cur' : ''}${it.startsWith('dev:') ? ' tl-dev' : ''}" data-seg="${i}" data-idx="${j}">${opts.labels.item(it, s.scene)}</span>`).join('')}</div>`).join('')
+          `<span class="tl-chip${cur?.seg === i && cur.idx === j ? ' cur' : ''}${it.startsWith('dev:') || it.startsWith('priv:') ? ' tl-dev' : ''}" data-seg="${i}" data-idx="${j}">${opts.labels.item(it, s.scene)}</span>`).join('')}</div>`).join('')
       || '<div class="tl-empty">把场景按钮从下方拖到这里</div>';
   }
   render();
@@ -76,6 +77,7 @@ export function createTimeline(box: HTMLElement, opts: {
     s.el.addEventListener('click', swallow, true);
     s.el.addEventListener('touchmove', (e) => { if (st?.armed) e.preventDefault(); }, { passive: false });
     s.el.addEventListener('pointerdown', (e) => {
+      if (s.pick) { const p = s.pick(); begin(e, s.el, { kind: s.kind, value: p.value, text: p.text }); return; }
       const b = (e.target as HTMLElement).closest('button') as HTMLElement | null;
       if (!b?.dataset.v) return;
       begin(e, b, { kind: s.kind, value: s.map ? s.map(b.dataset.v) : b.dataset.v });
@@ -151,7 +153,7 @@ export function createTimeline(box: HTMLElement, opts: {
       opts.open();
       const g = document.createElement('div');
       g.className = 'tl-ghost';
-      g.textContent = st.el.textContent;
+      g.textContent = st.src.text || st.el.textContent;
       box.ownerDocument.body.appendChild(g);
       st.ghost = g;
       st.el.classList.add('tl-src');

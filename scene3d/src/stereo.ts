@@ -213,7 +213,8 @@ export class Stereo {
       cam.position.copy(ey);
       cam.up.copy(o.up);
       cam.lookAt(o.screen);                             // 分开后两眼都注视屏幕中心（辐辏）
-      cam.quaternion.slerpQuaternions(o.baseQuat, cam.quaternion, s);   // 整体画面时朝向和人眼视角镜头一致
+      const look = cam.quaternion.clone();              // 注意：slerpQuaternions 会先把第一个参数拷进自己，目标必须另存一份
+      cam.quaternion.slerpQuaternions(o.baseQuat, look, s);   // 整体画面时朝向和人眼视角镜头一致
       cam.aspect = cw / ch;
       cam.fov = mix(o.baseFov, o.fitFov(ey, 0.74), s);
       cam.near = 0.01;

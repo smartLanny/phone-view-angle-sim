@@ -168,6 +168,8 @@ export const CSS = /* css */ `
 /* 编排时间线（工具栏上方）：每段 = 一个场景 + 这一段里依次展示的视角 / 机型 */
 .s3d-bar .s3d-seg button { user-select: none; -webkit-user-select: none; }
 .s3d-tl:not([hidden]) ~ .s3d-bar :is([data-k="scenes"], [data-k="views"], [data-k="devices"]) button { cursor: grab; }
+.s3d-tl:not([hidden]) ~ .s3d-bar [data-k="privacyRow"] { cursor: grab; }
+.s3d-bar label.tl-src { opacity: .35; }
 .s3d-tl { position: absolute; left: 50%; bottom: calc(84px * var(--k)); transform: translateX(-50%); max-width: calc(100% - 24px); box-sizing: border-box;
   font-size: calc(13px * var(--k)); padding: .75em .8em .55em; border-radius: 1em; background: var(--sf); border: 1px solid var(--ln);
   -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 16px 40px rgba(0,0,0,.4); }
