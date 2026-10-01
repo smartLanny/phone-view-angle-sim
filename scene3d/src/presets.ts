@@ -30,8 +30,8 @@ export interface Preset {
   hint: string;
   params: ParamDef[];
   defaults: Record<string, number>;
-  /** 从别的场景切过来时，过渡结束后自动进入谁的人眼视角 */
-  autoEye?: 'you' | 'nb';
+  /** 在画面上拖动手机时，横向 / 纵向分别改哪个参数（每像素改多少，可为负） */
+  drag?: { x?: { key: string; perPx: number }; y?: { key: string; perPx: number } };
   build(ctx: Ctx, p: Record<string, number>): SceneState;
 }
 
@@ -41,7 +41,7 @@ function camFrom(eye: THREE.Vector3, screen: THREE.Vector3, offset: THREE.Vector
   return { pos: mid.clone().add(offset), target: mid.clone().add(target), fov };
 }
 
-/** 坐着单手拿手机：沿视线放在 dist 处；theta 为手机绕竖直轴转开的角度（眼睛从屏幕右侧斜看）。 */
+/** 坐着单手拿手机：沿视线放在 dist 处；theta 为手机绕竖直轴转开的角度（眼睛从屏幕右侧斜看），tilt 为前后俯仰（顶端往外倒为正）。 */
 function holding(ctx: Ctx, p: Record<string, number>, seat: { seatHeight: number; lean: number; headPitch: number; gazePitch: number; side: number }) {
   const { you, dims } = ctx;
   poseSeated(you, seat);
@@ -53,7 +53,13 @@ function holding(ctx: Ctx, p: Record<string, number>, seat: { seatHeight: number
   // 绕手机自身的竖直方向转 theta：屏幕转向人物左侧，眼睛相对屏幕偏到右边（ψ = 0°）
   const up0 = v3(0, 1, 0).sub(toEye.clone().multiplyScalar(toEye.y)).normalize();
   const normal = toEye.clone().applyAxisAngle(up0, -(p.theta || 0) * DEG);
-  const phone = phoneMatrix(center, normal, up0);
+  const up = up0.clone();
+  if (p.tilt) {
+    const right = new THREE.Vector3().crossVectors(up, normal).normalize();
+    normal.applyAxisAngle(right, -p.tilt * DEG);
+    up.applyAxisAngle(right, -p.tilt * DEG);
+  }
+  const phone = phoneMatrix(center, normal, up);
   const reach = holdPhoneRight(you, phone, dims);
   armOnLap(you, 'l');
   return { eye, phone, reach };
@@ -64,9 +70,11 @@ export const PRESETS: Preset[] = [
     id: 'front', name: '正视', hint: '手机举在眼睛正前方，屏幕正对眼睛，作为基准',
     params: [
       { key: 'dist', label: '观看距离', min: 20, max: 50, step: 1, unit: 'cm' },
-      { key: 'theta', label: '手机转开', min: 0, max: 60, step: 1, unit: '°' },
+      { key: 'theta', label: '手机转开', min: -45, max: 60, step: 1, unit: '°' },
+      { key: 'tilt', label: '手机俯仰', min: -40, max: 40, step: 1, unit: '°' },
     ],
-    defaults: { dist: 30, theta: 0 },
+    defaults: { dist: 30, theta: 0, tilt: 0 },
+    drag: { x: { key: 'theta', perPx: 0.25 }, y: { key: 'tilt', perPx: 0.25 } },
     build(ctx, p) {
       const { eye, phone, reach } = holding(ctx, p, { seatHeight: 0.46, lean: 2, headPitch: 0, gazePitch: 2, side: 0 });
       const scr = new THREE.Vector3().setFromMatrixPosition(phone);
@@ -82,9 +90,11 @@ export const PRESETS: Preset[] = [
     id: 'normal', name: '正常手持', hint: '坐着单手拿手机，眼睛到屏幕约 30 cm，微微低头',
     params: [
       { key: 'dist', label: '观看距离', min: 20, max: 50, step: 1, unit: 'cm' },
-      { key: 'theta', label: '手机转开', min: 0, max: 60, step: 1, unit: '°' },
+      { key: 'theta', label: '手机转开', min: -45, max: 60, step: 1, unit: '°' },
+      { key: 'tilt', label: '手机俯仰', min: -40, max: 40, step: 1, unit: '°' },
     ],
-    defaults: { dist: 30, theta: 0 },
+    defaults: { dist: 30, theta: 0, tilt: 0 },
+    drag: { x: { key: 'theta', perPx: 0.25 }, y: { key: 'tilt', perPx: 0.25 } },
     build(ctx, p) {
       const { eye, phone, reach } = holding(ctx, p, { seatHeight: 0.46, lean: 8, headPitch: 18, gazePitch: 28, side: -0.02 });
       const scr = new THREE.Vector3().setFromMatrixPosition(phone);
@@ -98,8 +108,12 @@ export const PRESETS: Preset[] = [
   },
   {
     id: 'desk', name: '放在桌上', hint: '手机平放在桌面，人坐在桌前低头看；眼睛高出桌面约 45 cm',
-    params: [{ key: 'theta', label: '离轴角', min: 15, max: 60, step: 1, unit: '°' }],
-    defaults: { theta: 34 },
+    params: [
+      { key: 'theta', label: '离轴角', min: 15, max: 60, step: 1, unit: '°' },
+      { key: 'rot', label: '在桌上转动', min: -90, max: 90, step: 1, unit: '°' },
+    ],
+    defaults: { theta: 34, rot: 0 },
+    drag: { y: { key: 'theta', perPx: -0.15 }, x: { key: 'rot', perPx: 0.4 } },
     build(ctx, p) {
       const { you, dims } = ctx;
       poseSeated(you, { seatHeight: 0.46, lean: 9, headPitch: 30 });
@@ -116,8 +130,10 @@ export const PRESETS: Preset[] = [
         lookAt(you, center);
         eye = eyeWorld(you);
       }
-      const normal = v3(0, Math.cos(alpha), -Math.sin(alpha));
-      const phone = phoneMatrix(center, normal, v3(0, Math.sin(alpha), Math.cos(alpha)));
+      // 在桌面上绕竖直轴转动（翘起的方向跟着手机一起转）
+      const spin = new THREE.Quaternion().setFromAxisAngle(v3(0, 1, 0), (p.rot || 0) * DEG);
+      const normal = v3(0, Math.cos(alpha), -Math.sin(alpha)).applyQuaternion(spin);
+      const phone = phoneMatrix(center, normal, v3(0, Math.sin(alpha), Math.cos(alpha)).applyQuaternion(spin));
       const r = handOnTable(you, 'r', v3(center.x - 0.22, TABLE_Y + 0.035, center.z - 0.2));
       const l = handOnTable(you, 'l', v3(center.x + 0.22, TABLE_Y + 0.035, center.z - 0.2));
       return {
@@ -132,7 +148,7 @@ export const PRESETS: Preset[] = [
     id: 'subway', name: '地铁旁座', hint: '你坐着正常看手机，右边座位的乘客从侧面斜看你的屏幕',
     params: [{ key: 'theta', label: '旁人离轴角', min: 40, max: 70, step: 1, unit: '°' }],
     defaults: { theta: 55 },
-    autoEye: 'nb',
+    drag: { x: { key: 'theta', perPx: 0.15 } },
     build(ctx, p) {
       const { eye, phone, reach } = holding(ctx, { dist: 30, theta: 0 }, { seatHeight: SUBWAY_SEAT, lean: 8, headPitch: 18, gazePitch: 28, side: -0.02 });
       const you = capturePose(ctx.you);

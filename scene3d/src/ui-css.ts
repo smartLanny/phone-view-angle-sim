@@ -138,13 +138,16 @@ export const CSS = /* css */ `
 .s3d-stereo[hidden] { display: none; }
 .s3d-stereo.out { opacity: 0; }
 .st-back { position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 40%, #1d2026 0%, #07080a 72%); }
-.st-panel { position: absolute; border-radius: calc(14px * var(--k)); overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.5);
-  outline: calc(1.5px * var(--k)) solid rgba(255,255,255,.12); outline-offset: -1px; }
-.st-panel canvas { display: block; width: 100%; height: 100%; }
-.st-panel[data-eye="L"] { outline-color: color-mix(in srgb, var(--ac) 60%, transparent); }
-.st-panel[data-eye="R"] { outline-color: rgba(255,157,77,.6); }
-.st-panel.merged { outline-color: rgba(255,255,255,.16); }
-.st-badge, .st-tag { position: absolute; left: calc(10px * var(--k)); top: calc(10px * var(--k)); display: flex; align-items: center; gap: .55em;
+.s3d-stereo { --sp: 0; }
+/* --sp：从整体分开的程度（0 = 一个整体、无缝；1 = 两块独立的面板），圆角、描边、阴影跟着出现 */
+.st-panel { position: absolute; overflow: hidden; border-radius: calc(14px * var(--k) * var(--sp));
+  box-shadow: 0 18px 50px rgba(0,0,0, calc(.5 * var(--sp))); }
+.st-panel::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: var(--sp);
+  border: calc(1.5px * var(--k)) solid rgba(255,255,255,.14); }
+.st-panel canvas { position: absolute; display: block; }
+.st-panel[data-eye="L"]::after { border-color: color-mix(in srgb, var(--ac) 60%, transparent); }
+.st-panel[data-eye="R"]::after { border-color: rgba(255,157,77,.6); }
+.st-badge, .st-tag { position: absolute; z-index: 1; left: calc(10px * var(--k)); top: calc(10px * var(--k)); display: flex; align-items: center; gap: .55em;
   font-size: calc(13px * var(--k)); line-height: 1.3; padding: .38em .7em; border-radius: .62em; white-space: nowrap; font-variant-numeric: tabular-nums;
   background: rgba(14,15,18,.8); border: 1px solid var(--ln2); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); transition: opacity .2s; }
 .st-badge i { width: .62em; height: .62em; border-radius: 50%; background: var(--c); flex: none; }
@@ -153,7 +156,10 @@ export const CSS = /* css */ `
 .st-tag { color: var(--t2); }
 .st-info { position: absolute; left: 50%; transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 0; width: max-content;
   max-width: calc((100% - 24px) / var(--k)); display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; pointer-events: auto; }
-.st-step { font-size: 15px; font-weight: 600; color: var(--t); text-shadow: 0 1px 8px rgba(0,0,0,.6); }
+.st-step { font-size: 15px; font-weight: 600; color: var(--t); padding: .35em 1em; border-radius: 999px;
+  background: rgba(14,15,18,.7); border: 1px solid var(--ln); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.st-step:empty { display: none; }
+.st-info .st-diff, .st-info .st-ctrl, .st-info .st-note { opacity: var(--sp); transition: opacity .2s; }
 .st-diff { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; font-size: 13px; color: var(--t2); font-variant-numeric: tabular-nums; }
 .st-diff b { color: var(--t); font-weight: 600; }
 .st-diff .warn { color: #fab219; }
@@ -163,6 +169,26 @@ export const CSS = /* css */ `
 .st-ipd input { width: 90px; accent-color: var(--ac); }
 .st-ipd b { color: var(--t); font-weight: 600; min-width: 46px; text-align: left; font-variant-numeric: tabular-nums; }
 .st-note { font-size: 11.5px; color: var(--mu); max-width: 820px; }
+/* 场景 / 视角按钮可以左右拖动排序（也是自动播放的顺序） */
+.s3d-seg.sortable button, .s3d-seg[data-k="views"] button { touch-action: pan-x; user-select: none; -webkit-user-select: none; }
+.s3d-seg.sorting button { transition: transform .15s ease; }
+.s3d-seg button.drag { transition: none !important; position: relative; z-index: 2; background: rgba(255,255,255,.22); color: var(--t); box-shadow: 0 6px 18px rgba(0,0,0,.45); cursor: grabbing; }
+.s3d-seg button.lift { background: rgba(255,255,255,.18); }
+.s3d-play.on { color: #fff; background: var(--ac); border-color: transparent; }
+.s3d-btn:disabled { opacity: .35; cursor: default; }
+/* 提示条（播放 / 导出的状态） */
+.s3d-toast { position: absolute; left: 50%; bottom: calc(86px * var(--k)); transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 100%;
+  padding: 8px 14px; border-radius: 10px; font-size: 13px; color: var(--t); background: rgba(14,15,18,.86); border: 1px solid var(--ln2);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); opacity: 0; pointer-events: none !important; transition: opacity .25s; white-space: nowrap; max-width: calc((100% - 24px) / var(--k)); }
+.s3d-toast.show { opacity: 1; }
+/* 录制视频：只留画面、标注和读数，隐藏操作界面和鼠标 */
+.s3d.recording, .s3d.recording * { cursor: none !important; }
+.s3d.recording .s3d-bar, .s3d.recording .s3d-adjust, .s3d.recording .s3d-toast, .s3d.recording .st-ctrl, .s3d.recording .st-note { display: none !important; }
+body.s3d-recording .app-mode { display: none !important; }
+/* 拖动手机：讲解视角里指到手机上、人眼视角里整块画面都是“抓手” */
+.s3d.over-phone .s3d-canvas, .s3d.eyeview .s3d-canvas { cursor: grab; }
+.s3d.dragging .s3d-canvas { cursor: grabbing; }
+
 /* 双眼视差时收起左上读数、地铁小窗、讲解标注 */
 .s3d.stereo .s3d-hud, .s3d.stereo .s3d-inset, .s3d.stereo .ann-layer { display: none !important; }
 
@@ -197,6 +223,7 @@ export const CSS = /* css */ `
   .s3d-div { display: none; }
   .s3d-seg button { padding: 7px 9px; }
   .st-note { display: none; }
+  .s3d-toast { bottom: 112px; white-space: normal; text-align: center; }
   .st-diff { gap: 2px 10px; font-size: 12px; }
   .st-step { font-size: 13.5px; }
 }
