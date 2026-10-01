@@ -310,11 +310,11 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const goto = (p: Preset, animate = true) => {
     paramTween = null;
     const target = buildState(p);
-    if (!animate || !state) { preset = p; applySteady(target, true); describe(); startFade(FADE_TO, 1); return; }
+    if (!animate || !state) { trans = null; preset = p; applySteady(target, true); describe(); startFade(FADE_TO, 1); return; }
     trans = { a: snapNow(), b: target, t0: performance.now(), dur: TRANSITION_MS };
     preset = p;
     // 讲解视角：切换开始时人物慢慢淡回不透明，看清姿势变化；人眼视角 / 双眼视差：保持半透明，不闪
-    if (rig.mode === 'explain' && !stereo.active) startFade(1, 450);
+    if (rig.mode === 'explain' && !stereo.active) startFade(1, 650);
     describe();
   };
 
@@ -336,7 +336,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     if (raw >= 1 && trans.p === undefined) {
       trans = null;
       applySteady(b, true);
-      startFade(FADE_TO, 700);    // 切换结束后慢慢淡到半透明，焦点回到屏幕
+      startFade(FADE_TO, 1100);   // 切换结束后慢慢淡到半透明，焦点回到屏幕
       pokeAnn();
     }
   };
@@ -686,7 +686,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     return { fwd: flat.multiplyScalar(Math.cos(elev)).add(new THREE.Vector3(0, Math.sin(elev), 0)).normalize(), up: new THREE.Vector3(0, 1, 0) };
   };
   // 讲解标注：切换结束 / 拖动松手后保留一会儿再淡出
-  let annUntil = performance.now() + ANN_HOLD + 600, annAlpha = 1, lastFrame = performance.now(), wasExplain = true;
+  let annUntil = performance.now() + ANN_HOLD + 600, annAlpha = 1, lastFrame = performance.now(), wasExplain = true, reachFade = 1;
   const pokeAnn = () => { annUntil = performance.now() + ANN_HOLD; };
 
   const frame = (now: number) => {
@@ -700,8 +700,9 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       updateDerived();
       if (k >= 1) paramTween = null;
     }
-    if (fadeT0) figFade = fadeFrom + (fadeTo - fadeFrom) * Math.min(1, (now - fadeT0) / fadeDur);
-    const reachFade = state.reach || trans ? 1 : 0.35;     // 手臂够不到时整个人淡成半透明
+    // 人物透明度：缓入缓出地渐变（不是线性，开始和结束都不突兀）
+    if (fadeT0) figFade = fadeFrom + (fadeTo - fadeFrom) * THREE.MathUtils.smoothstep(Math.min(1, (now - fadeT0) / fadeDur), 0, 1);
+    reachFade += ((state.reach || trans ? 1 : 0.35) - reachFade) * Math.min(1, (now - lastFrame) / 350);   // 手臂够不到时整个人淡成半透明
     phone.group.matrix.copy(phoneM);
     phone.group.updateMatrixWorld(true);
     setProps(props);

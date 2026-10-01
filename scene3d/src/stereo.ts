@@ -2,7 +2,9 @@
  * 双眼视差演示（从人眼视角出发）：
  *   两只眼睛相距一个瞳距（默认 63 mm），都注视屏幕中心，各自从自己的位置看同一块屏幕。
  *   开始时画面就是人眼视角的整体画面；随后从正中间分开成左右两半，两半各自滑开、缩成左眼 / 右眼完整看到的画面
- *   （两眼的位置也从中点逐渐分到各自的位置），再滑回中间叠在一起（各 50%），展示视差与两眼之间的亮度、色偏差。
+ *   （两眼的位置也从中点逐渐分到各自的位置），再滑回中间叠在一起（各 50%）。
+ *   叠在一起时模拟大脑的融合：几何对齐（镜头回到两眼中点，不再错位重影），屏幕颜色仍按各自眼睛的位置算，
+ *   所以叠加 / 左右交替主要看到的是两眼之间的亮度、色偏差。
  *   退出时反过来合回一个整体，再回到普通的人眼视角。
  * 屏幕着色仍按“这只眼睛”的位置查实测数据，所以两边的亮度 / 色偏是真实的差别；
  * 叠加只是把两张画面各取一半混合的示意，不代表大脑实际融合出来的样子。
@@ -210,13 +212,15 @@ export class Stereo {
       const [, , cw, ch] = inner[i];
       const cwPx = Math.max(2, Math.round(cw * pr)), chPx = Math.max(2, Math.round(ch * pr));
       const cam = cams[i];
-      cam.position.copy(ey);
+      // 叠在一起时模拟大脑的融合：两眼的画面对齐（镜头回到两眼中点），只保留各自眼睛看到的屏幕颜色 / 亮度差
+      const cp = ey.clone().lerp(o.eye, ov);
+      cam.position.copy(cp);
       cam.up.copy(o.up);
       cam.lookAt(o.screen);                             // 分开后两眼都注视屏幕中心（辐辏）
       const look = cam.quaternion.clone();              // 注意：slerpQuaternions 会先把第一个参数拷进自己，目标必须另存一份
       cam.quaternion.slerpQuaternions(o.baseQuat, look, s);   // 整体画面时朝向和人眼视角镜头一致
       cam.aspect = cw / ch;
-      cam.fov = mix(o.baseFov, o.fitFov(ey, 0.74), s);
+      cam.fov = mix(o.baseFov, o.fitFov(cp, 0.74), s);
       cam.near = 0.01;
       cam.updateProjectionMatrix();
       cam.updateMatrixWorld();

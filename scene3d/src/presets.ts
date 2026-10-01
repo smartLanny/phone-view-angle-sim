@@ -134,8 +134,8 @@ export const PRESETS: Preset[] = [
       const spin = new THREE.Quaternion().setFromAxisAngle(v3(0, 1, 0), (p.rot || 0) * DEG);
       const normal = v3(0, Math.cos(alpha), -Math.sin(alpha)).applyQuaternion(spin);
       const phone = phoneMatrix(center, normal, v3(0, Math.sin(alpha), Math.cos(alpha)).applyQuaternion(spin));
-      const r = handOnTable(you, 'r', v3(center.x - 0.22, TABLE_Y + 0.035, center.z - 0.2));
-      const l = handOnTable(you, 'l', v3(center.x + 0.22, TABLE_Y + 0.035, center.z - 0.2));
+      const r = handOnTable(you, 'r', v3(center.x - 0.22, TABLE_Y + 0.035, center.z - 0.2), TABLE_Y);
+      const l = handOnTable(you, 'l', v3(center.x + 0.22, TABLE_Y + 0.035, center.z - 0.2), TABLE_Y);
       return {
         you: capturePose(you), nb: null, phone, reach: r && l,
         props: { stool: 1, table: 1, bench: 0 },

@@ -62,6 +62,21 @@ function gripMatrix(d: PhoneDims) {
   return m;
 }
 
+/**
+ * 手腕扭转分担：手相对前臂绕前臂长轴（骨骼 +Y）的扭转，分 k 给前臂、手腕只留剩下的部分，手的世界朝向不变。
+ * 旋前 / 旋后本来就主要发生在前臂；全压在手腕上时蒙皮会拧成“麻花”，场景之间过渡时更明显。
+ */
+export function shareTwist(lower: THREE.Bone, hand: THREE.Bone, k = 0.5) {
+  const q = hand.quaternion;
+  let ang = 2 * Math.atan2(q.y, q.w);
+  if (ang > Math.PI) ang -= 2 * Math.PI;
+  if (ang < -Math.PI) ang += 2 * Math.PI;
+  const T = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ang * k);
+  lower.quaternion.multiply(T);
+  hand.quaternion.premultiply(T.invert());
+  lower.updateMatrixWorld(true);
+}
+
 /** 右手握住手机（phone 为手机局部 → 世界矩阵）。返回手臂是否够得着。 */
 export function holdPhoneRight(c: Character, phone: THREE.Matrix4, d: PhoneDims): boolean {
   const b = c.bones;
@@ -82,6 +97,7 @@ export function holdPhoneRight(c: Character, phone: THREE.Matrix4, d: PhoneDims)
   const sh = worldPos(b.upperarm_r);
   const ok = solveTwoBone(b.upperarm_r, b.lowerarm_r, b.hand_r, wrist, sh.clone().add(new THREE.Vector3(-0.25, -0.45, -0.15)));
   setWorldQuat(b.hand_r, handQ);
+  shareTwist(b.lowerarm_r, b.hand_r);
 
   // 手指按目标点摆：第一节指向左边框背面外侧，后两节指向左边框上的落点；指尖不进入屏幕前方
   const L = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyMatrix4(phone);
@@ -122,20 +138,44 @@ export function armOnLap(c: Character, s: 'l' | 'r') {
   aimY(b[`lowerarm_${s}`], new THREE.Vector3(-0.15 * sx, -0.45, 1));
   aimY(b[`hand_${s}`], new THREE.Vector3(-0.2 * sx, -0.35, 1));
   rotateLocal(b[`hand_${s}`], 'y', 70 * sx);
+  shareTwist(b[`lowerarm_${s}`], b[`hand_${s}`]);
   relaxFingers(c, s);
 }
 
-/** 手平放在桌面上（掌心朝下、手指向前、拇指朝内），target 为手腕位置。 */
-export function handOnTable(c: Character, s: 'l' | 'r', target: THREE.Vector3): boolean {
+/**
+ * 手平放在桌面上（掌心朝下、手指向前、拇指朝内），target 为手腕位置。
+ * 给了 surfaceY（桌面高度）时检查指尖：低于桌面（加上指肚厚度）就把手腕抬高再摆一次，手指不穿进桌面。
+ */
+export function handOnTable(c: Character, s: 'l' | 'r', target: THREE.Vector3, surfaceY?: number): boolean {
   const b = c.bones, sx = s === 'l' ? 1 : -1;
   const sh = worldPos(b[`upperarm_${s}`]);
-  const ok = solveTwoBone(b[`upperarm_${s}`], b[`lowerarm_${s}`], b[`hand_${s}`], target, sh.clone().add(new THREE.Vector3(0.35 * sx, -0.3, -0.25)));
   // 右手骨骼 +X 为手背，左手骨骼镜像（−X 为手背）
   const Xh = new THREE.Vector3(0, sx > 0 ? -1 : 1, 0);
   const Yh = new THREE.Vector3(-0.25 * sx, 0, 1).normalize();
   const Zh = new THREE.Vector3().crossVectors(Xh, Yh);
-  setWorldQuat(b[`hand_${s}`], new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(Xh, Yh, Zh)));
-  relaxFingers(c, s, 0.6);
+  const handQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(Xh, Yh, Zh));
+  // relaxFingers 是在当前角度上叠加，重摆前先还原手指
+  const fingers = ['thumb', 'index', 'middle', 'ring', 'pinky'].flatMap((f) => [1, 2, 3].map((n) => b[`${f}_0${n}_${s}`])).filter(Boolean);
+  const rest = fingers.map((f) => f.quaternion.clone());
+  const place = (t: THREE.Vector3) => {
+    fingers.forEach((f, i) => f.quaternion.copy(rest[i]));
+    const ok = solveTwoBone(b[`upperarm_${s}`], b[`lowerarm_${s}`], b[`hand_${s}`], t, sh.clone().add(new THREE.Vector3(0.35 * sx, -0.3, -0.25)));
+    setWorldQuat(b[`hand_${s}`], handQ);
+    shareTwist(b[`lowerarm_${s}`], b[`hand_${s}`]);
+    relaxFingers(c, s, 0.3);                   // 放在桌上的手指只微微弯
+    return ok;
+  };
+  let ok = place(target);
+  if (surfaceY !== undefined) {
+    const t = target.clone();
+    for (let i = 0; i < 3; i++) {
+      const low = Math.min(...['thumb', 'index', 'middle', 'ring', 'pinky'].map((f) => worldPos(b[`${f}_04_leaf_${s}`]).y));
+      const need = surfaceY + 0.009 - low;      // 指尖骨骼到指肚表面约 9 mm
+      if (need < 0.001) break;
+      t.y += need;
+      ok = place(t);
+    }
+  }
   return ok;
 }
 
