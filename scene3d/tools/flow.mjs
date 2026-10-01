@@ -1,0 +1,31 @@
+// 交互流程自查：按顺序点按钮、等待、截图。用法: node tools/flow.mjs <输出目录>
+import os from 'node:os';
+import path from 'node:path';
+import { createServer } from 'vite';
+import { chromium } from 'playwright-core';
+
+const out = process.argv[2];
+const exe = path.join(os.homedir(), '.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell');
+const server = await createServer({ logLevel: 'error', server: { port: 5199 } });
+await server.listen();
+const browser = await chromium.launch({ executablePath: exe, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox'] });
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+const errs = [];
+page.on('pageerror', (e) => errs.push(e.message));
+page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
+await page.goto('http://127.0.0.1:5199/?scene=normal');
+await page.waitForFunction(() => window.__ready === true, null, { timeout: 120000 });
+const click = (sel) => page.click(sel);
+const shot = async (n) => { await page.screenshot({ path: path.join(out, n + '.png') }); console.log('shot', n); };
+const btn = (k, v) => `[data-k="${k}"] button[data-v="${v}"]`;
+await click(btn('scenes', 'subway'));
+await page.waitForTimeout(700); await shot('f1_mid_transition');
+await page.waitForTimeout(3200); await shot('f2_auto_nb_view');
+await click(btn('views', 'eye:you'));
+await page.waitForTimeout(550); await shot('f3_switch_mid');
+await page.waitForTimeout(1200); await shot('f4_you_view');
+await click(btn('scenes', 'desk'));
+await page.waitForTimeout(3600); await shot('f5_desk_after');
+await page.keyboard.press('h'); await page.waitForTimeout(200); await shot('f6_clean');
+console.log('errors:', JSON.stringify(errs.slice(0, 5)));
+await browser.close(); await server.close();

@@ -323,3 +323,23 @@ body.clean #hud { position: fixed; left: 28px; top: 24px; padding: 0; }
   #pad { max-width: 200px; }
   .sec { padding: 12px 16px; }
 }
+
+/* ================= 模式切换：场景演示（三维） / 屏幕仿真 ================= */
+.app-mode { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 40;
+  background: var(--surface); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
+.app-mode button { padding: 7px 16px; }
+#scene3d { position: fixed; inset: 0; display: none; z-index: 1; }
+#scene3d.loading::after { content: "正在加载三维场景…"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: var(--text-2); }
+body.mode-3d #scene3d { display: block; }
+body.mode-3d #gl, body.mode-3d #rail, body.mode-3d #panel, body.mode-3d #hud, body.mode-3d .caption,
+body.mode-3d #tip, body.mode-3d #tip2, body.mode-3d #hint, body.mode-3d .sframe { display: none !important; }
+/* 屏幕仿真模式里，顶部提示让出模式切换的位置 */
+body:not(.mode-3d) #hint { top: 62px; }
+@media (max-width: 1179px) {
+  .app-mode { left: auto; right: 12px; transform: none; }
+  body[data-layout="side"] .app-mode { right: 344px; }
+}
+@media (max-width: 760px) {
+  .app-mode { top: 10px; right: 10px; }
+  .app-mode button { padding: 6px 10px; font-size: 12px; }
+}

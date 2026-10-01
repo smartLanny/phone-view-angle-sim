@@ -6,7 +6,12 @@
 
 ![界面截图](docs/screenshot.jpg)
 
-## 功能
+## 两种模式
+
+- **场景演示**（默认）：三维场景里一个人拿着手机——正视、正常手持、放在桌上、地铁旁座（旁边乘客斜看，可开关防窥对比）。可在“讲解视角”和“人眼视角”之间平滑切换；屏幕永远按人物眼睛的位置、用实测数据着色，讲解视角里标出眼睛到屏幕顶 / 中 / 底的视线、离轴角、亮度和色偏。源码在 `scene3d/`，说明见 [scene3d/README.md](scene3d/README.md)。
+- **屏幕仿真**：下面列出的原有工具。
+
+## 功能（屏幕仿真）
 
 - **仿真效果**：拖动旋转手机，按每个像素相对眼睛的实际离轴角逐像素计算亮度与色偏（近距离观看时屏幕上下两端角度不同，也会体现出来）
 - **观看方向盘**：极坐标热力图显示各方向的亮度 / 色偏，可直接在盘上拖动设置观看方向；多种热力图配色；无实测的方位用斜线标出（上下镜像补全）
@@ -53,6 +58,8 @@ python3 tools/convert_ang2.py
 
 ```
 web/                网页本体（GitHub Pages 发布这个目录）
+  scene3d.js        场景演示模式（由 scene3d/ 构建，npm run build:web）
+  scene3d-person.js 内嵌的人物模型（CC0）
   index.html
   app.js            界面与交互
   model.js          可视角光学模型（插值、色偏、JNCD、ΔE2000）
@@ -64,6 +71,7 @@ web/                网页本体（GitHub Pages 发布这个目录）
 tools/
   convert_ang2.py   .ang2 → web/data.js
   embed_avatar.py   头像内嵌为 web/avatar.js
+scene3d/            场景演示的源码（Vite + TypeScript + three.js）
 docs/               文献调研笔记
 *.ang2              原始测量数据
 ```

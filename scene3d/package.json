@@ -1,0 +1,21 @@
+{
+  "name": "viewangle-3d",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:web": "tsc --noEmit && vite build --mode web && node tools/embed-person.mjs",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "playwright-core": "^1.63.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}

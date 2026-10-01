@@ -5,12 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>可视角度仿真</title>
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body data-layout="wide">
 <div class="sframe" id="sf0"></div>
 <div class="sframe" id="sf1"></div>
 <canvas id="gl" aria-label="手机屏幕可视角仿真画面"></canvas>
+<div id="scene3d" aria-label="三维场景演示"></div>
+<nav class="app-mode seg" id="appMode" aria-label="模式">
+  <button data-v="scene" class="on">场景演示</button>
+  <button data-v="sim">屏幕仿真</button>
+</nav>
 
 <!-- 宽屏时整体移入左栏；其他布局时浮在舞台左上角 -->
 <header id="hud">
@@ -198,6 +203,8 @@
 <script src="devices.js"></script>
 <script src="phone3d.js"></script>
 <script src="viz.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="scene3d-person.js"></script>
+<script src="scene3d.js?v=3"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

@@ -1057,6 +1057,7 @@
     setDist((S.dist / 10) * Math.exp(e.deltaY * 0.001));
   }, { passive: false });
   window.addEventListener('keydown', (e) => {
+    if (appMode === 'scene') return;   // 场景演示模式下快捷键交给三维场景
     if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = { ArrowLeft: [-2, 0], ArrowRight: [2, 0], ArrowUp: [0, 2], ArrowDown: [0, -2] }[e.key];
     if (k) { e.preventDefault(); stopSweep(); setTilt(S.tilt[0] + k[0], S.tilt[1] + k[1]); return; }
@@ -1259,6 +1260,7 @@
       if (S.rot) q.set('rot', S.rot);
       if (S.padMetric !== 'lum') q.set('k', S.padMetric);
       if (S.pal !== 'jet') q.set('pal', S.pal);
+      if (appMode !== 'scene') q.set('mode', 'sim');
       try { history.replaceState(null, '', '#' + q.toString()); } catch (err) { /* file:// 下个别浏览器不允许 */ }
     }, 300);
   }
@@ -1278,9 +1280,35 @@
     S.rot = num('rot', 0) === 90 ? 90 : 0;
     if (q.get('k') === 'jncd') S.padMetric = 'jncd';
     if (Viz.PALETTES[q.get('pal')]) S.pal = q.get('pal');
+    appMode = q.get('mode') === 'sim' ? 'sim' : 'scene';
     setView(num('t', 0), num('p', 0));
     syncSeg('mode', S.mode); syncSeg('orient', S.rot); syncSeg('padMetric', S.padMetric);
   }
+
+  // ---------- 模式：场景演示（三维，scene3d.js）/ 屏幕仿真（本页原有工具） ----------
+  let appMode = 'scene', scene3d = null, scene3dLoading = null;
+  function setAppMode(m) {
+    // 三维模块没加载成功（或浏览器不支持 WebGL2）时退回屏幕仿真
+    if (m === 'scene' && !window.Scene3D) m = 'sim';
+    appMode = m;
+    document.body.classList.toggle('mode-3d', m === 'scene');
+    syncSeg('appMode', m);
+    if (m === 'scene') {
+      stopSweep();
+      if (scene3d) scene3d.resume();
+      else if (!scene3dLoading) {
+        $('scene3d').classList.add('loading');
+        scene3dLoading = window.Scene3D.mount($('scene3d'))
+          .then((a) => { scene3d = a; window.scene3d = a; $('scene3d').classList.remove('loading'); })
+          .catch((err) => { console.error(err); scene3dLoading = null; toast('三维场景加载失败，已切回屏幕仿真'); setAppMode('sim'); });
+      }
+    } else {
+      if (scene3d) scene3d.pause();
+      requestRender();
+    }
+    writeHash();
+  }
+  bindSeg('appMode', (v) => setAppMode(v));
 
   // ---------- 启动 ----------
   window.addEventListener('resize', resize);
@@ -1294,6 +1322,7 @@
   }
   resize();
   hashReady = true;
+  setAppMode(appMode);
 
   // 调试 / 截图用
   window.viewAngle = { S, setView, animateTo, setClean, setDist, getModel, render: () => render() };
