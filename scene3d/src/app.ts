@@ -430,7 +430,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   $('scenes').addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest('button');
     const p = b && PRESETS.find((q) => q.id === b.dataset.v);
-    if (p && p !== preset) goto(p);
+    if (p && p !== preset && !playFromScene(p.id)) goto(p);
   });
   /** 视角按钮：explain，或 eye:you / eye:nb（地铁场景里选谁的眼睛） */
   function syncViewBtn() {
@@ -452,7 +452,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     if (v === 'explain') { stereo.stop(false); setView('explain'); }
     else { stereo.stop(true); setViewer(v.split(':')[1] as Viewer); setView('eye'); }
   };
-  $('views').addEventListener('click', (e) => { const b = (e.target as HTMLElement).closest('button'); if (b) pickView(b.dataset.v!); });
+  $('views').addEventListener('click', (e) => { const b = (e.target as HTMLElement).closest('button'); if (b && !playFromItem(b.dataset.v!)) pickView(b.dataset.v!); });
 
   // 演示用快捷键：H 隐藏界面，1–4 切换场景，V 切换视角，P 防窥
   let active = true;
@@ -513,7 +513,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       }
     } finally { swapping = false; }
   };
-  $('devices').addEventListener('click', (e) => { const b = (e.target as HTMLElement).closest('button'); if (b) setDevice(b.dataset.v!); });
+  $('devices').addEventListener('click', (e) => { const b = (e.target as HTMLElement).closest('button'); if (b && !playFromItem('dev:' + b.dataset.v)) setDevice(b.dataset.v!); });
   const setData = (on: boolean) => {
     data.setVisible(on);
     $('dataBtn').classList.toggle('on', on);
@@ -593,6 +593,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     ],
     open: () => setTl(true),
     jump: (sg, idx) => {
+      if (playFromStep(tl.segments.indexOf(sg), idx)) return;       // 播放中：从这一步接着播
       const p = PRESETS.find((q) => q.id === sg.scene);
       if (p && p !== preset) goto(p);
       const it = idx >= 0 ? sg.items[idx] : sg.items[0];
@@ -605,8 +606,28 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     else pickView(it);
   };
   const steps = (): Step[] => tl.segments.flatMap((sg, i): Step[] => sg.items.length
-    ? sg.items.map((it, j): Step => (j === 0 ? { scene: sg.scene, item: it, seg: i, idx: j } : { item: it, seg: i, idx: j }))
+    ? sg.items.map((it, j): Step => ({ scene: sg.scene, item: it, seg: i, idx: j }))
     : [{ scene: sg.scene, seg: i, idx: -1 }]);
+  // 播放中点了时间线上的某一步，或工具栏上的场景 / 视角 / 机型：在时间线里找到对应的那一步，从那里接着播（只有点“停止”才停）
+  const playFromStep = (seg: number, idx: number) => {
+    if (!player.playing) return false;
+    const list = steps();
+    return player.jump(list, list.findIndex((st) => st.seg === seg && (idx < 0 || st.idx === idx)));
+  };
+  /** 场景按钮：跳到时间线里这个场景的下一段（从当前段往后找，找到头再从开头找） */
+  const playFromScene = (id: string) => {
+    const cur = player.current;
+    if (!cur) return false;
+    const segs = tl.segments, n = segs.length;
+    for (let k = 1; k <= n; k++) { const s = (cur.seg + k) % n; if (segs[s].scene === id) return playFromStep(s, -1); }
+    return false;
+  };
+  /** 视角 / 机型按钮：当前这一段里有这一步就跳过去 */
+  const playFromItem = (it: string) => {
+    const cur = player.current;
+    const j = cur ? tl.segments[cur.seg]?.items.indexOf(it) ?? -1 : -1;
+    return j >= 0 && playFromStep(cur!.seg, j);
+  };
   function setTl(open: boolean) {
     $('tl').hidden = !open;
     $('tlBtn').classList.toggle('on', open);
@@ -624,7 +645,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const player = createPlayer({
     apply: (st) => {
       const p = st.scene ? PRESETS.find((q) => q.id === st.scene) : null;
-      if (p && p !== preset) goto(p);          // 换场景和这一段的第一个视角同时开始，镜头连贯
+      if (p && p !== preset) goto(p);          // 场景不同才换：换场景和这一段的第一个视角同时开始，镜头连贯；跳到段中间的某一步也先换到那个场景
       if (st.item) applyItem(st.item);
     },
     onStep: (st) => tl.highlight(st ? { seg: st.seg, idx: st.idx } : null),
@@ -779,14 +800,16 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     if (stereoOn) {
       covered = stereo.render(now, {
         renderer, W, H, k: uiK, baseFov: rig.camera.fov, baseQuat: rig.camera.quaternion.clone(), eye: mainEye, screen: scr, up: camUp, phoneInv: inv, model, fitFov,
-        renderEye: (ey, cam) => {
+        renderEye: (ey, cam, chroma) => {
           u.uEye.value.copy(ey).applyMatrix4(inv);
+          u.uChroma.value = chroma;
           lookYou.setHead(headOf(you, eyeYou), cam, mainViewer === 'you' ? 1 : 0);
           if (eyeNb) lookNb.setHead(headOf(nb, eyeNb), cam, mainViewer === 'nb' ? 1 : 0);
           renderer.render(scene, cam);
         },
       });
       u.uEye.value.copy(mainEye).applyMatrix4(inv);
+      u.uChroma.value = 1;
     }
     // 地铁场景：右侧两个小窗，旁人看到的、你看到的各渲染一次（先画到画布左下角再拷到小窗自己的画布，之后主画面会把那一块盖掉）
     const insetOn = !!(sub && eyeNb && !stereoOn);

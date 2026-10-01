@@ -1,13 +1,13 @@
 /*
  * 自动播放与导出视频。
  * 播放的步骤来自“编排”时间线（timeline.ts）：每段先换场景（和这一段的第一个视角 / 机型同时开始），再依次换这一段里的视角 / 机型。
- * 每一步先等上一步的动画走完，再停留设定的秒数。
+ * 每一步先等上一步的动画走完，再停留设定的秒数。播放中可以跳到任意一步（jump），从那一步接着往下播；只有 stop 才停。
  *
  * 导出视频用浏览器的“共享标签页”录屏（getDisplayMedia + MediaRecorder），录下的就是页面上看到的样子
  * （三维画面、标注、读数都在）；录制时自动隐藏工具栏等操作界面和鼠标。
  */
 
-/** scene：换到这个场景；item：视角（explain / eye:you / eye:nb / stereo）或机型（dev:<id>）；seg / idx 用来在时间线上标出当前步 */
+/** scene：这一步所在的场景（不同才切换）；item：视角（explain / eye:you / eye:nb / stereo）、机型（dev:<id>）或防窥（priv:on / off）；seg / idx 用来在时间线上标出当前步 */
 export interface Step { scene?: string; item?: string; seg: number; idx: number }
 
 export interface PlayApi {
@@ -30,29 +30,39 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function createPlayer(api: PlayApi) {
   let playing = false, abort = false;
+  let list: Step[] = [], at = -1, jumpTo = -1;
   let rec: MediaRecorder | null = null;
+  const cut = () => abort || jumpTo >= 0;      // 停止，或跳到了别的步：结束当前步的等待
 
   async function waitSettled() {
     await sleep(120);
     const t0 = performance.now();
-    while (!abort && !api.settled() && performance.now() - t0 < 20000) await sleep(50);
+    while (!cut() && !api.settled() && performance.now() - t0 < 20000) await sleep(50);
   }
   async function play(steps: Step[]): Promise<boolean> {
     if (playing || !steps.length) return false;
-    playing = true; abort = false; api.onState(true, !!rec);
+    playing = true; abort = false; jumpTo = -1; list = steps; at = 0;
+    api.onState(true, !!rec);
     try {
-      for (const st of steps) {
-        if (abort) break;
+      while (at < list.length && !abort) {
+        const st = list[at];
         api.onStep?.(st);
         api.apply(st);
         await waitSettled();
         const t0 = performance.now();
-        while (!abort && performance.now() - t0 < api.hold() * 1000) await sleep(50);
+        while (!cut() && performance.now() - t0 < api.hold() * 1000) await sleep(50);
+        if (jumpTo >= 0) { at = jumpTo; jumpTo = -1; } else at++;
       }
       return !abort;
     } finally {
-      playing = false; api.onState(false, !!rec); api.onStep?.(null);
+      playing = false; at = -1; api.onState(false, !!rec); api.onStep?.(null);
     }
+  }
+  /** 播放中跳到 steps 的第 i 步，从那里接着播（steps 用最新的时间线，期间改过编排也没关系） */
+  function jump(steps: Step[], i: number) {
+    if (!playing || i < 0 || i >= steps.length) return false;
+    list = steps; jumpTo = i;
+    return true;
   }
   function stop() {
     abort = true;
@@ -114,8 +124,10 @@ export function createPlayer(api: PlayApi) {
   }
 
   return {
-    play, stop, exportVideo,
+    play, stop, jump, exportVideo,
     get playing() { return playing; },
+    /** 正在播的那一步（没在播放时为 null） */
+    get current(): Step | null { return playing ? list[at] ?? null : null; },
     get recording() { return !!rec; },
   };
 }

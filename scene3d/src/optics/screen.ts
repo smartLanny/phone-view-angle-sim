@@ -27,6 +27,7 @@ const FS = /* glsl */ `
   uniform vec3 uCut;        // 前摄开孔：中心距显示区顶边、胶囊直线段半长、半径
   uniform vec2 uImgScale;
   uniform int uMode;        // 0 实测效果  1 原图  2 离轴角分布
+  uniform float uChroma;    // 色偏（色度偏离）的倍数，亮度不变；1 = 实测。双眼叠加时按双眼累加放大
 
   vec3 srgb2lin(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
   vec3 lin2srgb(vec3 c) { c = clamp(c, 0.0, 1.0); return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
@@ -77,6 +78,13 @@ const FS = /* glsl */ `
       scr = lin2srgb(lin);
     } else {
       vec3 sim = vec3(dot(lut(0, th, ps), lin), dot(lut(1, th, ps), lin), dot(lut(2, th, ps), lin));
+      if (uChroma != 1.0) {
+        // 只放大色度偏离：同样亮度、不偏色的颜色 + 偏色部分 × 倍数（偏色部分亮度为 0，所以亮度不变）
+        vec3 Yw = vec3(0.2126, 0.7152, 0.0722);
+        float y0 = dot(lin, Yw);
+        vec3 neutral = y0 > 1e-5 ? lin * (dot(sim, Yw) / y0) : sim;
+        sim = max(neutral + (sim - neutral) * uChroma, 0.0);
+      }
       scr = lin2srgb(sim);
     }
     vec2 q = pp - vec2(0.0, uHalf.y - uCut.x);
@@ -110,6 +118,7 @@ export function createScreenMaterial() {
       uCut: { value: new THREE.Vector3(0.0044, 0, 0.0016) },
       uImgScale: { value: new THREE.Vector2(1, 1) },
       uMode: { value: 0 },
+      uChroma: { value: 1 },
     },
   });
 }

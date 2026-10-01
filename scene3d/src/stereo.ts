@@ -3,11 +3,13 @@
  *   两只眼睛相距一个瞳距（默认 63 mm），都注视屏幕中心，各自从自己的位置看同一块屏幕。
  *   开始时画面就是人眼视角的整体画面；随后从正中间分开成左右两半，两半各自滑开、缩成左眼 / 右眼完整看到的画面
  *   （两眼的位置也从中点逐渐分到各自的位置），再滑回中间叠在一起（各 50%）。
- *   叠在一起时模拟大脑的融合：几何对齐（镜头回到两眼中点，不再错位重影），屏幕颜色仍按各自眼睛的位置算，
- *   所以叠加 / 左右交替主要看到的是两眼之间的亮度、色偏差。
+ *   叠在一起时模拟大脑的融合：两眼都注视屏幕中心，融合把两眼的错位拉回大半（镜头向两眼中点靠拢，保留 FUSE_KEEP 的视差），
+ *   所以屏幕中心对齐、越往边缘（和屏幕中心不在同一深度的地方）越能看出轻微的不重合；
+ *   屏幕颜色仍按各自眼睛的位置算，并按双眼累加（平方和）放大色偏：两眼各自有色偏、角度又不同，
+ *   叠在一起比只用一只眼（或两眼中点）看更容易看出偏色。亮度不放大（双眼看亮度接近平均）。
  *   退出时反过来合回一个整体，再回到普通的人眼视角。
  * 屏幕着色仍按“这只眼睛”的位置查实测数据，所以两边的亮度 / 色偏是真实的差别；
- * 叠加只是把两张画面各取一半混合的示意，不代表大脑实际融合出来的样子。
+ * 叠加是示意：画面各取一半混合，色偏按双眼累加放大，不代表大脑实际融合出来的样子。
  *
  * 渲染：每只眼睛先画到主画布左下角的一块区域，再拷到各自的面板画布上（同一套色调映射与 sRGB 输出，颜色和主画面一致）。
  */
@@ -24,6 +26,10 @@ type Rect = [number, number, number, number];
 const mixR = (a: Rect, b: Rect, t: number): Rect => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t), mix(a[3], b[3], t)];
 /** 自动播放的时间轴（ms，从镜头到达人眼后算起）：停在整体画面 → 从中间分开 → 并排停留 → 叠在一起 */
 const T = { whole: 800, split: 2600, hold: 5800, merge: 7400 };
+/** 叠在一起时保留的视差比例（0 = 完全对齐，1 = 两眼原本的错位） */
+const FUSE_KEEP = 0.25;
+/** 双眼累加后的色偏（JNCD）：两眼各自的色偏按平方和合成 */
+const binoShift = (l: number, r: number) => Math.hypot(l, r);
 
 /** s：0 = 一个整体（人眼视角）→ 1 = 左右眼并排；o：0 = 并排 → 1 = 叠在一起 */
 interface Look { s: number; o: number }
@@ -58,7 +64,7 @@ export class Stereo {
     this.el.innerHTML = `
       <div class="st-back"></div>
       ${['L', 'R'].map((e) => `<div class="st-panel" data-eye="${e}"><canvas></canvas><div class="st-badge"></div></div>`).join('')}
-      <div class="st-tag" data-st="tag"><b>左眼 + 右眼</b>叠加 · 各 50%</div>
+      <div class="st-tag" data-st="tag"><b>左眼 + 右眼</b>叠加 · 色偏按双眼累加</div>
       <div class="st-info">
         <div class="st-diff" data-st="diff"></div>
         <div class="st-ctrl">
@@ -159,7 +165,8 @@ export class Stereo {
     renderer: THREE.WebGLRenderer; W: number; H: number; k: number; baseFov: number; baseQuat: THREE.Quaternion;
     eye: THREE.Vector3; screen: THREE.Vector3; up: THREE.Vector3;
     phoneInv: THREE.Matrix4; model: AngleModel; fitFov: (eye: THREE.Vector3, fill: number) => number;
-    renderEye: (eye: THREE.Vector3, cam: THREE.PerspectiveCamera) => void;
+    /** chroma：屏幕色偏的倍数（双眼叠加时放大，其余为 1） */
+    renderEye: (eye: THREE.Vector3, cam: THREE.PerspectiveCamera, chroma: number) => void;
   }): boolean {
     if (!this.t0) { this.t0 = now; this.el.hidden = false; }
     const e = this.frozen ?? now - this.t0;
@@ -201,10 +208,26 @@ export class Stereo {
     let right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
     if (right.lengthSq() < 1e-6) right = new THREE.Vector3().crossVectors(dir, o.up);
     right.normalize();
+    // 两只眼睛共用中点视线的“上”方向（垂直于视线和两眼连线）：两眼只差一个绕这个轴的转角，
+    // 不会因为低头看手机而互相歪斜（用世界“上”会让两眼画面差一个旋转，整块屏幕都对不齐）
+    const camUp = new THREE.Vector3().crossVectors(right, dir).normalize();
     const half = (this.ipd / 2) * s;
     const eyes = [o.eye.clone().addScaledVector(right, -half), o.eye.clone().addScaledVector(right, half)];
     const fullEyes = [o.eye.clone().addScaledVector(right, -this.ipd / 2), o.eye.clone().addScaledVector(right, this.ipd / 2)];
     const cams = [this.camL, this.camR];
+    // 读数（按两眼最终的位置）；叠加时两边画面的色偏都乘上 gain，混合后的色偏 ≈ 双眼累加值
+    const reads = fullEyes.map((ey) => {
+      const l = ey.clone().applyMatrix4(o.phoneInv).sub(new THREE.Vector3(0, 0, 0.0003));
+      const an = anglesOf(l);
+      return { theta: an.theta, ev: o.model.evalAt(an.theta, an.psi), eye: ey };
+    }) as [EyeRead, EyeRead];
+    this.reads = reads;
+    const mid = anglesOf(o.eye.clone().applyMatrix4(o.phoneInv).sub(new THREE.Vector3(0, 0, 0.0003)));
+    const monoShift = o.model.evalAt(mid.theta, mid.psi).jncd;            // 不考虑双眼：只从两眼中点看
+    const bino = binoShift(reads[0].ev.jncd, reads[1].ev.jncd);
+    const avg = (reads[0].ev.jncd + reads[1].ev.jncd) / 2;
+    const gain = avg > 0.05 ? THREE.MathUtils.clamp(bino / avg, 1, 2) : 1;
+    const chroma = mix(1, gain, wiggle ? 0 : ov);                         // 左右交替时每次只看一只眼，不放大
     const r = o.renderer, pr = r.getPixelRatio(), Hpx = r.domElement.height;
     const autoShadow = r.shadowMap.autoUpdate;
     r.setScissorTest(true);
@@ -212,10 +235,10 @@ export class Stereo {
       const [, , cw, ch] = inner[i];
       const cwPx = Math.max(2, Math.round(cw * pr)), chPx = Math.max(2, Math.round(ch * pr));
       const cam = cams[i];
-      // 叠在一起时模拟大脑的融合：两眼的画面对齐（镜头回到两眼中点），只保留各自眼睛看到的屏幕颜色 / 亮度差
-      const cp = ey.clone().lerp(o.eye, ov);
+      // 叠在一起时模拟大脑的融合：两眼的错位被拉回大半（镜头向两眼中点靠拢），中心对齐、边缘保留一点不重合
+      const cp = ey.clone().lerp(o.eye, ov * (1 - FUSE_KEEP));
       cam.position.copy(cp);
-      cam.up.copy(o.up);
+      cam.up.copy(camUp);
       cam.lookAt(o.screen);                             // 分开后两眼都注视屏幕中心（辐辏）
       const look = cam.quaternion.clone();              // 注意：slerpQuaternions 会先把第一个参数拷进自己，目标必须另存一份
       cam.quaternion.slerpQuaternions(o.baseQuat, look, s);   // 整体画面时朝向和人眼视角镜头一致
@@ -227,7 +250,7 @@ export class Stereo {
       r.setViewport(0, 0, cw, ch);
       r.setScissor(0, 0, cw, ch);
       if (i > 0) r.shadowMap.autoUpdate = false;        // 阴影每帧只更新一次
-      o.renderEye(ey, cam);
+      o.renderEye(ey, cam, chroma);
       const p = this.panels[i];
       if (p.cv.width !== cwPx || p.cv.height !== chPx) { p.cv.width = cwPx; p.cv.height = chPx; }
       p.g.drawImage(r.domElement, 0, Hpx - chPx, cwPx, chPx, 0, 0, cwPx, chPx);
@@ -236,13 +259,7 @@ export class Stereo {
     r.setScissorTest(false);
     r.setViewport(0, 0, W, H);
 
-    // ---------- 读数（按两眼最终的位置） ----------
-    const reads = fullEyes.map((ey) => {
-      const l = ey.clone().applyMatrix4(o.phoneInv).sub(new THREE.Vector3(0, 0, 0.0003));
-      const an = anglesOf(l);
-      return { theta: an.theta, ev: o.model.evalAt(an.theta, an.psi), eye: ey };
-    }) as [EyeRead, EyeRead];
-    this.reads = reads;
+    // ---------- 读数 ----------
     const verg = o.screen.clone().sub(fullEyes[0]).angleTo(o.screen.clone().sub(fullEyes[1])) * 180 / Math.PI;
     const refW = o.model.ref.W;
     const de = deltaE2000(xyzToLab(reads[0].ev.W, refW), xyzToLab(reads[1].ev.W, refW));
@@ -276,6 +293,7 @@ export class Stereo {
       `<span>屏幕中心离轴角 左 <b>${fmt(reads[0].theta, 0)}°</b> · 右 <b>${fmt(reads[1].theta, 0)}°</b></span>` +
       `<span>亮度差 <b>${fmt(dLum)}%</b></span>` +
       `<span>两眼色差 ΔE00（含亮度）<b>${fmt(de)}</b></span><span>色度差 Δu′v′ <b>${fmt(jn)}</b> JNCD</span>` +
+      `<span>双眼叠加色偏 <b>${fmt(bino)}</b> JNCD（只看两眼中点 ${fmt(monoShift)}）</span>` +
       (reads.some((rd) => rd.ev.clamped) ? '<span class="warn">超出实测范围（> 70°）按 70° 计</span>' : '');
     if (q('diff').dataset.html !== diff) { q('diff').innerHTML = diff; q('diff').dataset.html = diff; }
     // 说明区：整体画面时只露出第一句，分开后再显示读数与控制
