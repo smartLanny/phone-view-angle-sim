@@ -1,13 +1,14 @@
 /*
  * 自动播放与导出视频。
- * 播放顺序就是工具栏上的顺序：按场景按钮的先后，每个场景里再按视角按钮的先后各展示一遍（按钮可以左右拖动排序，见 sortable）。
+ * 播放的步骤来自“编排”时间线（timeline.ts）：每段先换场景（和这一段的第一个视角 / 机型同时开始），再依次换这一段里的视角 / 机型。
  * 每一步先等上一步的动画走完，再停留设定的秒数。
  *
  * 导出视频用浏览器的“共享标签页”录屏（getDisplayMedia + MediaRecorder），录下的就是页面上看到的样子
  * （三维画面、标注、读数都在）；录制时自动隐藏工具栏等操作界面和鼠标。
  */
 
-export interface Step { scene: string; view: string }
+/** scene：换到这个场景；item：视角（explain / eye:you / eye:nb / stereo）或机型（dev:<id>）；seg / idx 用来在时间线上标出当前步 */
+export interface Step { scene?: string; item?: string; seg: number; idx: number }
 
 export interface PlayApi {
   /** 执行一步（只发起动作，动画由 settled 判断是否结束） */
@@ -20,6 +21,8 @@ export interface PlayApi {
   setRecording(on: boolean): void;
   /** 播放 / 录制状态变了（更新按钮） */
   onState(playing: boolean, recording: boolean): void;
+  /** 正在播放哪一步（null = 播完 / 停止） */
+  onStep?(step: Step | null): void;
   toast(msg: string): void;
 }
 
@@ -40,6 +43,7 @@ export function createPlayer(api: PlayApi) {
     try {
       for (const st of steps) {
         if (abort) break;
+        api.onStep?.(st);
         api.apply(st);
         await waitSettled();
         const t0 = performance.now();
@@ -47,7 +51,7 @@ export function createPlayer(api: PlayApi) {
       }
       return !abort;
     } finally {
-      playing = false; api.onState(false, !!rec);
+      playing = false; api.onState(false, !!rec); api.onStep?.(null);
     }
   }
   function stop() {
@@ -114,72 +118,4 @@ export function createPlayer(api: PlayApi) {
     get playing() { return playing; },
     get recording() { return !!rec; },
   };
-}
-
-/**
- * 让一组按钮可以左右拖动排序：鼠标按下后横向移动超过几个像素就开始拖；触屏要先长按再拖（不影响横向滑动工具栏）。
- * 没拖动就是普通点击。scale 为按钮所在工具栏的缩放（大屏幕放大时屏幕位移要除回去）。
- */
-export function sortable(seg: HTMLElement, onReorder: (ids: string[]) => void, scale: () => number) {
-  let st: null | {
-    b: HTMLButtonElement; id: number; x0: number; y0: number; armed: boolean; moved: boolean; timer: number;
-    items: HTMLButtonElement[]; mids: number[]; from: number; to: number; step: number;
-  } = null;
-  let suppress = false;
-  seg.addEventListener('click', (e) => { if (suppress) { suppress = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
-  seg.addEventListener('touchmove', (e) => { if (st?.armed) e.preventDefault(); }, { passive: false });
-  seg.addEventListener('pointerdown', (e) => {
-    const b = (e.target as HTMLElement).closest('button') as HTMLButtonElement | null;
-    if (!b || e.button !== 0 || b.disabled) return;
-    const items = [...seg.querySelectorAll('button')] as HTMLButtonElement[];
-    st = { b, id: e.pointerId, x0: e.clientX, y0: e.clientY, armed: e.pointerType === 'mouse', moved: false, timer: 0, items, mids: [], from: items.indexOf(b), to: items.indexOf(b), step: 0 };
-    if (!st.armed) st.timer = window.setTimeout(() => { if (st) { st.armed = true; b.classList.add('lift'); } }, 320);
-  });
-  const end = (e: PointerEvent, cancel = false) => {
-    if (!st || e.pointerId !== st.id) return;
-    clearTimeout(st.timer);
-    const s = st; st = null;
-    s.b.classList.remove('lift', 'drag');
-    seg.classList.remove('sorting');
-    s.items.forEach((it) => { it.style.transform = ''; });
-    if (!s.moved) return;
-    suppress = true; setTimeout(() => { suppress = false; }, 50);
-    if (cancel || s.to === s.from) return;
-    const ids = s.items.map((it) => it.dataset.v!);
-    const [m] = ids.splice(s.from, 1);
-    ids.splice(s.to, 0, m);
-    onReorder(ids);
-  };
-  window.addEventListener('pointermove', (e) => {
-    if (!st || e.pointerId !== st.id) return;
-    const dx = e.clientX - st.x0;
-    if (!st.moved) {
-      if (!st.armed) {                     // 触屏还没长按就动了：当作滑动工具栏，放弃
-        if (Math.abs(dx) > 8 || Math.abs(e.clientY - st.y0) > 8) { clearTimeout(st.timer); st = null; }
-        return;
-      }
-      if (Math.abs(dx) < 6) return;
-      st.moved = true;
-      try { st.b.setPointerCapture(e.pointerId); } catch { /* 有的浏览器不支持就算了 */ }
-      st.b.classList.add('drag');
-      seg.classList.add('sorting');
-      st.mids = st.items.map((it) => { const r = it.getBoundingClientRect(); return r.left + r.width / 2; });
-      const r = st.b.getBoundingClientRect(), gap = st.items.length > 1 ? Math.abs(st.mids[1] - st.mids[0]) - (st.items[0].getBoundingClientRect().width + st.items[1].getBoundingClientRect().width) / 2 : 0;
-      st.step = r.width + Math.max(0, gap);
-    }
-    const k = scale();
-    st.b.style.transform = `translateX(${dx / k}px)`;
-    const x = st.mids[st.from] + dx;
-    let to = st.from;
-    while (to < st.items.length - 1 && x > st.mids[to + 1]) to++;
-    while (to > 0 && x < st.mids[to - 1]) to--;
-    st.to = to;
-    st.items.forEach((it, i) => {
-      if (it === st!.b) return;
-      const shift = st!.from < to && i > st!.from && i <= to ? -1 : st!.from > to && i < st!.from && i >= to ? 1 : 0;
-      it.style.transform = shift ? `translateX(${(shift * st!.step) / k}px)` : '';
-    });
-  });
-  window.addEventListener('pointerup', (e) => end(e));
-  window.addEventListener('pointercancel', (e) => end(e, true));
 }

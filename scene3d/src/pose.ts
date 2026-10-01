@@ -69,6 +69,16 @@ export function holdPhoneRight(c: Character, phone: THREE.Matrix4, d: PhoneDims)
   const wrist = new THREE.Vector3().setFromMatrixPosition(hand);
   const handQ = new THREE.Quaternion().setFromRotationMatrix(hand);
   rotateWorld(b.clavicle_r, Z, 6);
+  // 手机举得高 / 远、手臂伸直也差一点时：把肩膀往手机方向带（肩胛前伸 / 上提，最多约 30°）。只动锁骨，头和眼睛不动
+  const armLen = worldPos(b.upperarm_r).distanceTo(worldPos(b.lowerarm_r)) + worldPos(b.lowerarm_r).distanceTo(worldPos(b.hand_r));
+  for (let i = 0; i < 10; i++) {
+    const s0 = worldPos(b.upperarm_r);
+    if (s0.distanceTo(wrist) <= armLen - 0.003) break;
+    const root = worldPos(b.clavicle_r);
+    const axis = new THREE.Vector3().crossVectors(s0.clone().sub(root), wrist.clone().sub(root));
+    if (axis.lengthSq() < 1e-10) break;
+    rotateWorld(b.clavicle_r, axis, 3);
+  }
   const sh = worldPos(b.upperarm_r);
   const ok = solveTwoBone(b.upperarm_r, b.lowerarm_r, b.hand_r, wrist, sh.clone().add(new THREE.Vector3(-0.25, -0.45, -0.15)));
   setWorldQuat(b.hand_r, handQ);

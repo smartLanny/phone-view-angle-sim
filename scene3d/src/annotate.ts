@@ -18,7 +18,7 @@ class FatLine {
   geo = new LineGeometry();
   mat: LineMaterial;
   obj: Line2;
-  constructor(scene: THREE.Scene, color: string, public width: number, opacity: number, dashed = false) {
+  constructor(scene: THREE.Scene, color: string, public width: number, public opacity: number, dashed = false) {
     this.mat = new LineMaterial({ color, linewidth: width, transparent: true, opacity, dashed, dashSize: 0.008, gapSize: 0.006, depthTest: true });
     this.obj = new Line2(this.geo, this.mat);
     this.obj.renderOrder = 30;
@@ -69,6 +69,15 @@ export class Annotations {
   }
 
   setResolution(w: number, h: number) { for (const l of Object.values(this.lines)) l.mat.resolution.set(w, h); }
+
+  /** 整体淡入淡出（切换结束后一会儿自动隐去，避免挡住观察）：视线、角度弧和标签一起 */
+  alpha = 1;
+  setOpacity(a: number) {
+    if (Math.abs(a - this.alpha) < 1e-3) return;
+    this.alpha = a;
+    for (const l of Object.values(this.lines)) l.mat.opacity = l.opacity * a;
+    this.layer.style.opacity = String(a);
+  }
 
   /** 界面缩放（大屏幕上标注跟着放大）：线宽、标签间距、引线圆点都乘这个系数；字号由 CSS 的 --k 控制 */
   k = 1;

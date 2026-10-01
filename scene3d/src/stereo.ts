@@ -58,7 +58,6 @@ export class Stereo {
       ${['L', 'R'].map((e) => `<div class="st-panel" data-eye="${e}"><canvas></canvas><div class="st-badge"></div></div>`).join('')}
       <div class="st-tag" data-st="tag"><b>左眼 + 右眼</b>叠加 · 各 50%</div>
       <div class="st-info">
-        <div class="st-step" data-st="step"></div>
         <div class="st-diff" data-st="diff"></div>
         <div class="st-ctrl">
           <div class="s3d-seg" data-st="layout"><button data-v="split">并排</button><button data-v="overlay">叠加</button><button data-v="wiggle">左右交替</button></div>
@@ -66,7 +65,6 @@ export class Stereo {
           <button class="s3d-btn" data-st="replay">重播</button>
           <button class="s3d-btn" data-st="exit">退出</button>
         </div>
-        <div class="st-note">叠加为示意（两眼画面各取 50%），不代表大脑实际融合的结果；亮度与色偏按各自眼睛的位置查实测数据。拖动画面可调整手机角度。</div>
       </div>`;
     host.prepend(this.el);
     this.panels = [...this.el.querySelectorAll('.st-panel')].map((w) => {
@@ -141,38 +139,30 @@ export class Stereo {
       b.classList.toggle('on', !this.auto && (b as HTMLElement).dataset.v === this.layout));
   }
 
-  private autoLook(e: number): { look: Look; step: string } {
-    if (e < T.whole) return { look: { s: 0, o: 0 }, step: '① 人眼视角：现在看到的是一个整体画面' };
-    if (e < T.split) {
-      const k = ease(clamp01((e - T.whole) / (T.split - T.whole)));
-      return { look: { s: k, o: 0 }, step: '② 从中间分开：其实左眼、右眼各看各的' };
-    }
-    if (e < T.hold) return { look: { s: 1, o: 0 }, step: '② 左眼、右眼看到的屏幕：离轴角不同，亮度和色偏也不同' };
-    if (e < T.merge) {
-      const k = ease(clamp01((e - T.hold) / (T.merge - T.hold)));
-      return { look: { s: 1, o: k }, step: '③ 叠在一起' };
-    }
-    return { look: { s: 1, o: 1 }, step: '③ 两眼画面叠在一起：深度不同的地方出现重影（视差），颜色不同的地方两眼要互相“抵消”' };
+  private autoLook(e: number): Look {
+    if (e < T.whole) return { s: 0, o: 0 };
+    if (e < T.split) return { s: ease(clamp01((e - T.whole) / (T.split - T.whole))), o: 0 };
+    if (e < T.hold) return { s: 1, o: 0 };
+    if (e < T.merge) return { s: 1, o: ease(clamp01((e - T.hold) / (T.merge - T.hold))) };
+    return { s: 1, o: 1 };
   }
 
   /**
    * 每帧（镜头已在人眼视角时）调用。eye 为两眼中点；screen / up 为屏幕中心与手机“上”方向（世界坐标）；
-   * baseFov 为人眼视角镜头的视场（整体画面时和它一致，分开后按面板重新取景）。
+   * baseFov / baseQuat 为人眼视角镜头的视场与朝向（整体画面时和它完全一致，分开后转向屏幕、按面板重新取景）。
    * renderEye 由 app 提供：设置屏幕的眼睛位置、隐藏头部，再把场景画到当前视口。
    * 返回 true 表示主画面被完全挡住，不用再画。
    */
   render(now: number, o: {
-    renderer: THREE.WebGLRenderer; W: number; H: number; k: number; baseFov: number;
+    renderer: THREE.WebGLRenderer; W: number; H: number; k: number; baseFov: number; baseQuat: THREE.Quaternion;
     eye: THREE.Vector3; screen: THREE.Vector3; up: THREE.Vector3;
     phoneInv: THREE.Matrix4; model: AngleModel; fitFov: (eye: THREE.Vector3, fill: number) => number;
     renderEye: (eye: THREE.Vector3, cam: THREE.PerspectiveCamera) => void;
   }): boolean {
     if (!this.t0) { this.t0 = now; this.el.hidden = false; }
     const e = this.frozen ?? now - this.t0;
-    let step = '';
     if (this.auto) {
-      const a = this.autoLook(e);
-      this.cur = a.look; step = a.step;
+      this.cur = this.autoLook(e);
       if (e >= T.merge && this.frozen === null) { this.auto = false; this.layout = 'overlay'; this.syncLayoutBtn(); }
     } else {
       if (this.tween) {
@@ -184,8 +174,6 @@ export class Stereo {
           if (this.exiting) { this.finish(); return false; }
         }
       }
-      step = this.exiting ? '合回一个整体' : this.layout === 'split' ? '左眼、右眼并排'
-        : this.layout === 'overlay' ? '两眼画面叠加（各 50%）' : '左右眼交替显示：注意画面的跳动（视差）和颜色的变化';
     }
     const { s, o: ov } = this.cur;
     const wiggle = !this.auto && !this.exiting && this.layout === 'wiggle' && !this.tween;
@@ -224,7 +212,8 @@ export class Stereo {
       const cam = cams[i];
       cam.position.copy(ey);
       cam.up.copy(o.up);
-      cam.lookAt(o.screen);                             // 两眼都注视屏幕中心（辐辏）
+      cam.lookAt(o.screen);                             // 分开后两眼都注视屏幕中心（辐辏）
+      cam.quaternion.slerpQuaternions(o.baseQuat, cam.quaternion, s);   // 整体画面时朝向和人眼视角镜头一致
       cam.aspect = cw / ch;
       cam.fov = mix(o.baseFov, o.fitFov(ey, 0.74), s);
       cam.near = 0.01;
@@ -276,7 +265,6 @@ export class Stereo {
     const q = (kk: string) => this.el.querySelector(`[data-st="${kk}"]`) as HTMLElement;
     const merged2 = ov > 0.98 && !wiggle;
     Object.assign(q('tag').style, { transform: `translate(${merged[0]}px, ${merged[1]}px)`, opacity: merged2 ? '1' : '0' });
-    if (q('step').textContent !== step) q('step').textContent = step;
     const fmt = (v: number, d = 1) => v.toFixed(d);
     const diff = `<span>两眼相距 <b>${Math.round(this.ipd * 1000)} mm</b></span>` +
       `<span>两条视线夹角 <b>${fmt(verg)}°</b></span>` +

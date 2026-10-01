@@ -156,10 +156,7 @@ export const CSS = /* css */ `
 .st-tag { color: var(--t2); }
 .st-info { position: absolute; left: 50%; transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 0; width: max-content;
   max-width: calc((100% - 24px) / var(--k)); display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; pointer-events: auto; }
-.st-step { font-size: 15px; font-weight: 600; color: var(--t); padding: .35em 1em; border-radius: 999px;
-  background: rgba(14,15,18,.7); border: 1px solid var(--ln); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
-.st-step:empty { display: none; }
-.st-info .st-diff, .st-info .st-ctrl, .st-info .st-note { opacity: var(--sp); transition: opacity .2s; }
+.st-info .st-diff, .st-info .st-ctrl { opacity: var(--sp); transition: opacity .2s; }
 .st-diff { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; font-size: 13px; color: var(--t2); font-variant-numeric: tabular-nums; }
 .st-diff b { color: var(--t); font-weight: 600; }
 .st-diff .warn { color: #fab219; }
@@ -168,12 +165,31 @@ export const CSS = /* css */ `
 .st-ipd { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--t2); padding: 0 4px; }
 .st-ipd input { width: 90px; accent-color: var(--ac); }
 .st-ipd b { color: var(--t); font-weight: 600; min-width: 46px; text-align: left; font-variant-numeric: tabular-nums; }
-.st-note { font-size: 11.5px; color: var(--mu); max-width: 820px; }
-/* 场景 / 视角按钮可以左右拖动排序（也是自动播放的顺序） */
-.s3d-seg.sortable button, .s3d-seg[data-k="views"] button { touch-action: pan-x; user-select: none; -webkit-user-select: none; }
-.s3d-seg.sorting button { transition: transform .15s ease; }
-.s3d-seg button.drag { transition: none !important; position: relative; z-index: 2; background: rgba(255,255,255,.22); color: var(--t); box-shadow: 0 6px 18px rgba(0,0,0,.45); cursor: grabbing; }
-.s3d-seg button.lift { background: rgba(255,255,255,.18); }
+/* 编排时间线（工具栏上方）：每段 = 一个场景 + 这一段里依次展示的视角 / 机型 */
+.s3d-bar .s3d-seg button { user-select: none; -webkit-user-select: none; }
+.s3d-tl:not([hidden]) ~ .s3d-bar :is([data-k="scenes"], [data-k="views"], [data-k="devices"]) button { cursor: grab; }
+.s3d-tl { position: absolute; left: 50%; bottom: calc(84px * var(--k)); transform: translateX(-50%); max-width: calc(100% - 24px); box-sizing: border-box;
+  font-size: calc(13px * var(--k)); padding: .75em .8em .55em; border-radius: 1em; background: var(--sf); border: 1px solid var(--ln);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 16px 40px rgba(0,0,0,.4); }
+.s3d-tl[hidden] { display: none; }
+.tl-strip { display: flex; flex-wrap: wrap; gap: .45em; align-items: center; }
+.tl-seg { display: flex; flex-wrap: wrap; align-items: center; gap: .25em; padding: .25em; border-radius: .75em; background: rgba(255,255,255,.035); border: 1px solid var(--ln); }
+.tl-chip { padding: .35em .7em; border-radius: .6em; color: var(--t2); background: rgba(255,255,255,.06); cursor: grab; white-space: nowrap;
+  user-select: none; -webkit-user-select: none; transition: background .15s, opacity .15s; }
+.tl-chip:hover { color: var(--t); background: rgba(255,255,255,.12); }
+.tl-scene { color: var(--t); font-weight: 600; background: rgba(255,255,255,.13); }
+.tl-dev { box-shadow: inset 0 0 0 1px var(--ln2); background: transparent; }
+.tl-chip.cur { color: #fff; background: var(--ac); }
+.tl-chip.tl-src, .s3d-bar button.tl-src { opacity: .35; }
+.tl-chip.tl-lift, .s3d-bar button.tl-lift { background: rgba(255,255,255,.22); }
+.tl-empty { color: var(--mu); padding: .4em .2em; }
+.tl-foot { display: flex; justify-content: space-between; align-items: center; gap: 1em; margin-top: .55em; font-size: .85em; color: var(--mu); }
+.tl-foot .s3d-link { padding: 0; font-size: 1em; }
+.tl-mark { position: absolute; display: none; width: calc(3px * var(--k)); margin-left: calc(-1.5px * var(--k)); background: var(--ac); border-radius: 2px; pointer-events: none; }
+.tl-ghost { position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none; white-space: nowrap;
+  margin: calc(-14px * var(--s3d-k, 1)) 0 0 calc(-16px * var(--s3d-k, 1)); padding: .35em .75em; border-radius: .6em;
+  font: 600 calc(13px * var(--s3d-k, 1)) / 1.3 system-ui, -apple-system, "PingFang SC", sans-serif; color: #fff; background: #4aa3ff; box-shadow: 0 8px 22px rgba(0,0,0,.45); }
+.tl-ghost.remove { background: #c94c4c; text-decoration: line-through; }
 .s3d-play.on { color: #fff; background: var(--ac); border-color: transparent; }
 .s3d-btn:disabled { opacity: .35; cursor: default; }
 /* 提示条（播放 / 导出的状态） */
@@ -183,7 +199,7 @@ export const CSS = /* css */ `
 .s3d-toast.show { opacity: 1; }
 /* 录制视频：只留画面、标注和读数，隐藏操作界面和鼠标 */
 .s3d.recording, .s3d.recording * { cursor: none !important; }
-.s3d.recording .s3d-bar, .s3d.recording .s3d-adjust, .s3d.recording .s3d-toast, .s3d.recording .st-ctrl, .s3d.recording .st-note { display: none !important; }
+.s3d.recording .s3d-bar, .s3d.recording .s3d-adjust, .s3d.recording .s3d-toast, .s3d.recording .s3d-tl, .s3d.recording .st-ctrl { display: none !important; }
 body.s3d-recording .app-mode { display: none !important; }
 /* 拖动手机：讲解视角里指到手机上、人眼视角里整块画面都是“抓手” */
 .s3d.over-phone .s3d-canvas, .s3d.eyeview .s3d-canvas { cursor: grab; }
@@ -222,9 +238,8 @@ body.s3d-recording .app-mode { display: none !important; }
   .s3d-bar { bottom: 10px; border-radius: 14px; }
   .s3d-div { display: none; }
   .s3d-seg button { padding: 7px 9px; }
-  .st-note { display: none; }
+  .s3d-tl { bottom: 112px; left: 8px; right: 8px; transform: none; max-width: none; }
   .s3d-toast { bottom: 112px; white-space: normal; text-align: center; }
   .st-diff { gap: 2px 10px; font-size: 12px; }
-  .st-step { font-size: 13.5px; }
 }
 `;
