@@ -87,7 +87,11 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   style.lights(scene, new THREE.Vector3(0, 0.95, 0.12));
 
   // 道具：凳子、桌子、地铁长椅（含扶杆）。各自一份材质，切换场景时淡入淡出
-  const propMat = () => { const m = style.prop() as THREE.MeshStandardMaterial; m.transparent = true; return m; };
+  // 道具（凳子、桌子、长椅）画两遍：人物之前一遍、人物之后一遍，都用普通的半透明混合、都不写深度。
+  //   - 人物之前那遍：半透明人物后面能透出道具
+  //   - 人物之后那遍（只在人物身后的部分通过深度测试）：盖住道具后面的腿脚，淡入时按比例渐渐盖住
+  // 完全显示时效果和“不透明道具先画”一样，而且淡入、淡出、显示完整全程用的是同一套画法，结束时不会突然换样子。
+  const propMat = () => { const m = style.prop() as THREE.MeshStandardMaterial; m.transparent = true; m.depthWrite = false; return m; };
   const mk = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => {
     const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; return m;
   };
@@ -102,18 +106,32 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   bench.add(mk(new THREE.BoxGeometry(1.7, 0.36, 0.04), benchMat, -0.35, 0.2, 0.17));
   bench.add(mk(new THREE.CylinderGeometry(0.018, 0.018, 2.3, 16), benchMat, 0.72, 1.15, 0.22));
   scene.add(stool, table, bench);
-  const propObjs: Record<keyof Props, { obj: THREE.Object3D; mat: THREE.MeshStandardMaterial }> = {
-    stool: { obj: stool, mat: stoolMat }, table: { obj: table, mat: tableMat }, bench: { obj: bench, mat: benchMat },
+  // 阴影按透明度抖动着淡入淡出（VSM 阴影会模糊，看不出颗粒）：阴影渲染默认不认 alphaHash，给每个道具配一个带 alphaHash 的深度材质
+  const propDepth = (obj: THREE.Object3D) => {
+    const d = new THREE.MeshDepthMaterial({ alphaHash: true });
+    obj.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).customDepthMaterial = d; });
+    return d;
+  };
+  /** 第二遍：同一份几何体，画在人物之后，不投影 */
+  const overPass = (obj: THREE.Object3D, mat: THREE.Material) => {
+    const o2 = obj.clone(true);
+    const m2 = mat.clone();
+    o2.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.material = m2; m.renderOrder = 30; m.castShadow = false; } });
+    scene.add(o2);
+    return { obj: o2, mat: m2 as THREE.MeshStandardMaterial };
+  };
+  const propObjs: Record<keyof Props, { obj: THREE.Object3D; mat: THREE.MeshStandardMaterial; depth: THREE.MeshDepthMaterial; over: { obj: THREE.Object3D; mat: THREE.MeshStandardMaterial } }> = {
+    stool: { obj: stool, mat: stoolMat, depth: propDepth(stool), over: overPass(stool, stoolMat) },
+    table: { obj: table, mat: tableMat, depth: propDepth(table), over: overPass(table, tableMat) },
+    bench: { obj: bench, mat: benchMat, depth: propDepth(bench), over: overPass(bench, benchMat) },
   };
   const setProps = (p: Props) => {
-    for (const [k, { obj, mat }] of Object.entries(propObjs)) {
+    for (const [k, { obj, mat, depth, over }] of Object.entries(propObjs)) {
       const a = p[k as keyof Props];
-      obj.visible = a > 0.01;
-      mat.opacity = a;
-      // 完全显示时用不透明材质：先于人物绘制，半透明人物后面能透出凳子 / 长椅
-      mat.transparent = a < 0.999;
-      mat.depthWrite = a > 0.98;
-      obj.traverse((o) => { o.castShadow = a > 0.5; });
+      const b = 1 - Math.sqrt(Math.max(0, 1 - a));   // 两遍叠起来的覆盖率正好是 a
+      obj.visible = over.obj.visible = a > 0.005;
+      mat.opacity = over.mat.opacity = b;
+      depth.opacity = a;
     }
   };
 
@@ -638,6 +656,11 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
 
   // ---------- 渲染 ----------
   const insetCam = new THREE.PerspectiveCamera(42, 0.8, 0.01, 30);
+  const insetCv = document.createElement('canvas');
+  insetCv.className = 's3d-inset-cv';
+  $('inset').prepend(insetCv);
+  const insetG = insetCv.getContext('2d')!;
+  let insetAlpha = 0, insetRect: [number, number, number, number] = [0, 0, 1, 1];
   let uiK = 1;
   const applyScale = () => {
     const { W, H } = size();
@@ -715,14 +738,14 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     let mainEye = mainViewer === 'nb' && eyeNb ? eyeNb : eyeYou;
     const axes = eyeAxes(mainViewer === 'nb' && eyeNb ? nb : you, mainEye, new THREE.Vector3().setFromMatrixPosition(phoneM));
     let camFwd = axes.fwd, camUp = axes.up;
-    if (lastViewer && mainViewer !== lastViewer && rig.progress > 0) eyeSwitch = { from: lastCamEye.clone(), fromFwd: lastCamFwd.clone(), fromUp: lastCamUp.clone(), t0: now };
+    if (lastViewer && mainViewer !== lastViewer) eyeSwitch = { from: lastCamEye.clone(), fromFwd: lastCamFwd.clone(), fromUp: lastCamUp.clone(), t0: now };
     lastViewer = mainViewer;
     let switching = 0;
     if (eyeSwitch) {
       const k = Math.min(1, (now - eyeSwitch.t0) / 1100);
       switching = 1 - k;
       const e = ease(k);
-      mainEye = eyeSwitch.from.clone().lerp(mainEye, e).add(new THREE.Vector3(0, 0.06 * Math.sin(Math.PI * e), 0));
+      mainEye = eyeSwitch.from.clone().lerp(mainEye, e).add(new THREE.Vector3(0, 0.06 * Math.sin(Math.PI * e) * Math.min(1, rig.progress * 4), 0));
       camFwd = eyeSwitch.fromFwd.clone().lerp(camFwd, e).normalize();
       camUp = eyeSwitch.fromUp.clone().lerp(camUp, e).normalize();
       if (k >= 1) eyeSwitch = null;
@@ -745,7 +768,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     rig.camera.updateMatrixWorld();
     lookYou.setFade(figFade * reachFade);
     lookNb.setFade(figFade * nbAlpha);
-    lookNb.setDepth(nbAlpha > 0.98);
+    lookNb.setDepth(nbAlpha);
     const stereoOn = stereo.active && rig.progress >= 1;
     let covered = false;
     if (stereoOn) {
@@ -759,6 +782,40 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
         },
       });
       u.uEye.value.copy(mainEye).applyMatrix4(inv);
+    }
+    // 地铁场景：角落小窗，用另一个人的眼睛对同一部手机再渲染一次
+    const insetOn = !!(sub && otherEye && !stereoOn);
+    if (insetOn && otherEye && eyeNb) {
+      const narrow = W < 700;
+      const big = rig.mode === 'eye';
+      const iw = Math.round(Math.min((big ? 360 : 300) * uiK, W * (narrow ? 0.3 : big ? 0.24 : 0.2))), ih = Math.round(iw * 1.25);
+      insetRect = [W - iw - (narrow ? 10 : 24 * uiK), narrow ? 62 : 72 * uiK, iw, ih];
+      insetCam.position.copy(otherEye);
+      insetCam.up.copy(up);
+      insetCam.lookAt(scr);
+      insetCam.aspect = iw / ih;
+      insetCam.fov = fitFov(otherEye, 0.8);
+      insetCam.updateProjectionMatrix();
+      insetCam.updateMatrixWorld();
+      u.uEye.value.copy(otherEye).applyMatrix4(inv);
+      const otherIsYou = mainViewer === 'nb';
+      lookYou.setHead(headOf(you, eyeYou), insetCam, otherIsYou ? 1 : 0);
+      lookNb.setHead(headOf(nb, eyeNb), insetCam, otherIsYou ? 0 : 1);
+      ann.setVisible(false);
+      const pr = renderer.getPixelRatio(), iwPx = Math.round(iw * pr), ihPx = Math.round(ih * pr);
+      renderer.setScissorTest(true);
+      renderer.setScissor(0, 0, iw, ih);
+      renderer.setViewport(0, 0, iw, ih);
+      renderer.render(scene, insetCam);
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, W, H);
+      if (insetCv.width !== iwPx || insetCv.height !== ihPx) { insetCv.width = iwPx; insetCv.height = ihPx; }
+      insetG.drawImage(renderer.domElement, 0, renderer.domElement.height - ihPx, iwPx, ihPx, 0, 0, iwPx, ihPx);
+      u.uEye.value.copy(mainEye).applyMatrix4(inv);
+      const a = anglesOf(otherEye.clone().applyMatrix4(inv));
+      const ev = model.evalAt(a.theta, a.psi);
+      const html = `<b>${otherIsYou ? '你' : '旁人'}看到的</b><span>亮度 <b>${Math.round(ev.yRatio * 100)}%</b> · ${a.theta.toFixed(0)}°</span>`;
+      if ($('insetCap').dataset.html !== html) { $('insetCap').innerHTML = html; $('insetCap').dataset.html = html; }
     }
     lookYou.setHead(headOf(you, eyeYou), rig.camera, mainViewer === 'you' || switching ? camFade : 0);
     lookNb.setHead(eyeNb ? headOf(nb, eyeNb) : eyeYou, rig.camera, mainViewer === 'nb' || switching ? camFade : 0);
@@ -794,37 +851,11 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       data.update(panelProfiles, eyes, JMAX, device.name);
     }
 
-    // 地铁场景：角落小窗，用另一个人的眼睛对同一部手机再渲染一次
+    // 地铁场景的角落小窗：画面在主画面之前渲染（见上），这里只更新位置、淡入淡出和说明
     const inset = $('inset');
-    if (sub && otherEye && !stereoOn) {
-      const narrow = W < 700;
-      const big = rig.mode === 'eye';
-      const iw = Math.round(Math.min((big ? 360 : 300) * uiK, W * (narrow ? 0.3 : big ? 0.24 : 0.2))), ih = Math.round(iw * 1.25);
-      const ix = W - iw - (narrow ? 10 : 24 * uiK), iy = narrow ? 62 : 72 * uiK;
-      Object.assign(inset.style, { display: 'block', left: ix + 'px', top: iy + 'px', width: iw + 'px', height: ih + 'px' });
-      insetCam.position.copy(otherEye);
-      insetCam.up.copy(up);
-      insetCam.lookAt(scr);
-      insetCam.aspect = iw / ih;
-      insetCam.fov = fitFov(otherEye, 0.8);
-      insetCam.updateProjectionMatrix();
-      insetCam.updateMatrixWorld();
-      u.uEye.value.copy(otherEye).applyMatrix4(inv);
-      const otherIsYou = mainViewer === 'nb';
-      lookYou.setHead(headOf(you, eyeYou), insetCam, otherIsYou ? 1 : 0);
-      lookNb.setHead(headOf(nb, eyeNb!), insetCam, otherIsYou ? 0 : 1);
-      ann.setVisible(false);
-      renderer.setScissorTest(true);
-      renderer.setScissor(ix, H - iy - ih, iw, ih);
-      renderer.setViewport(ix, H - iy - ih, iw, ih);
-      renderer.render(scene, insetCam);
-      renderer.setScissorTest(false);
-      renderer.setViewport(0, 0, W, H);
-      ann.setVisible(annShow);
-      const a = anglesOf(otherEye.clone().applyMatrix4(inv));
-      const ev = model.evalAt(a.theta, a.psi);
-      const html = `<b>${otherIsYou ? '你' : '旁人'}看到的</b><span>亮度 <b>${Math.round(ev.yRatio * 100)}%</b> · ${a.theta.toFixed(0)}°</span>`;
-      if ($('insetCap').dataset.html !== html) { $('insetCap').innerHTML = html; $('insetCap').dataset.html = html; }
+    insetAlpha = THREE.MathUtils.clamp(insetAlpha + ((insetOn ? 1 : 0) - insetAlpha) * Math.min(1, dt / 220), 0, 1);
+    if (insetAlpha > 0.01) {
+      Object.assign(inset.style, { display: 'block', opacity: String(insetAlpha), left: insetRect[0] + 'px', top: insetRect[1] + 'px', width: insetRect[2] + 'px', height: insetRect[3] + 'px' });
     } else inset.style.display = 'none';
 
     // 读数（主观看者，屏幕中心）

@@ -113,6 +113,7 @@ export const CSS = /* css */ `
 
 /* 地铁场景小窗：另一个人的眼睛看到的 */
 .s3d-inset { position: absolute; display: none; pointer-events: none; border-radius: 12px; border: 1px solid rgba(255,157,77,.55); box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.s3d-inset-cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 11px; }
 .s3d-inset-cap { position: absolute; left: 0; right: 0; bottom: -1px; transform: translateY(100%); padding: 6px 2px 0; font-size: calc(12px * var(--k)); display: flex; justify-content: space-between; gap: 8px; }
 .s3d-inset-cap b { font-weight: 600; }
 .s3d-inset-cap span { color: var(--t2); font-variant-numeric: tabular-nums; }

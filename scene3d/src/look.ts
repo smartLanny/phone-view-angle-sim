@@ -23,8 +23,11 @@ export interface LookParams {
 export interface Look {
   uniforms: { uFade: { value: number }; uHeadView: { value: THREE.Vector3 }; uHeadR: { value: number }; uHeadFade: { value: number } };
   setFade(v: number): void;
-  /** 是否写深度预通道（人物淡入 / 淡出途中关掉，避免在身后的物体上挖出人形的洞） */
-  setDepth(on: boolean): void;
+  /**
+   * 深度预通道的强度 0..1：人物淡入 / 淡出途中按这个比例抖动着写深度（不是一下子开 / 关），
+   * 既不会在身后的物体上突然挖出人形的洞，也不会在淡入完成时突然换一种样子。
+   */
+  setDepth(k: number): void;
   /** 头部淡出：head 为头部中心的世界坐标，fade 0..1（1 = 完全隐藏），每帧随镜头更新。 */
   setHead(head: THREE.Vector3, camera: THREE.Camera, fade: number): void;
 }
@@ -41,7 +44,7 @@ export function applyLook(c: Character, p: LookParams, renderOrder = 10): Look {
     uHeadView: { value: new THREE.Vector3(0, 0, 1e3) },
     uHeadR: { value: 0.16 },
     uHeadFade: { value: 0 },
-    uDepthOn: { value: 1 },
+    uDepthK: { value: 1 },
   };
   const mat = new THREE.MeshPhysicalMaterial({
     color: p.color, roughness: p.roughness, metalness: 0,
@@ -70,12 +73,12 @@ export function applyLook(c: Character, p: LookParams, renderOrder = 10): Look {
   const depthMat = new THREE.MeshBasicMaterial({ colorWrite: false });
   depthMat.onBeforeCompile = (sh) => {
     sh.uniforms.uHeadView = uniforms.uHeadView; sh.uniforms.uHeadR = uniforms.uHeadR; sh.uniforms.uHeadFade = uniforms.uHeadFade;
-    sh.uniforms.uFade = uniforms.uFade; sh.uniforms.uDepthOn = uniforms.uDepthOn;
+    sh.uniforms.uFade = uniforms.uFade; sh.uniforms.uDepthK = uniforms.uDepthK;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vViewP;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvViewP = mvPosition.xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vViewP; uniform vec3 uHeadView; uniform float uHeadR; uniform float uHeadFade; uniform float uFade; uniform float uDepthOn;')
-      .replace('void main() {', 'void main() {\n  if (uDepthOn < 0.5 || uFade < 0.02 || (uHeadFade > 0.5 && length(vViewP - uHeadView) < uHeadR * 0.9)) discard;');
+      .replace('#include <common>', '#include <common>\nvarying vec3 vViewP; uniform vec3 uHeadView; uniform float uHeadR; uniform float uHeadFade; uniform float uFade; uniform float uDepthK;')
+      .replace('void main() {', 'void main() {\n  if (uDepthK < 0.01 || uFade < 0.02 || (uHeadFade > 0.5 && length(vViewP - uHeadView) < uHeadR * 0.9)) discard;\n  if (uDepthK < 0.999 && fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453) >= uDepthK) discard;');
   };
   depthMat.customProgramCacheKey = () => 'figure-depth';
   for (const m of [...c.meshes]) {
@@ -93,7 +96,7 @@ export function applyLook(c: Character, p: LookParams, renderOrder = 10): Look {
   return {
     uniforms,
     setFade(v: number) { uniforms.uFade.value = v; },
-    setDepth(on: boolean) { uniforms.uDepthOn.value = on ? 1 : 0; },
+    setDepth(k: number) { uniforms.uDepthK.value = Math.min(1, Math.max(0, k)); },
     setHead(head, camera, fade) {
       uniforms.uHeadView.value.copy(head).applyMatrix4(camera.matrixWorldInverse);
       uniforms.uHeadFade.value = fade;
