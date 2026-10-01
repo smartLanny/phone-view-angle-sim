@@ -8,3 +8,7 @@ __pycache__/
 外观*.png
 屏幕截图*.png
 *.txt
+
+# 本机素材：苹果官网 AR 模型（版权归 Apple），不进公开仓库
+web/local/
+scene3d/public/local/

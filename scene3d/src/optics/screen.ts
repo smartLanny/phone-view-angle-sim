@@ -27,8 +27,6 @@ const FS = /* glsl */ `
   uniform vec3 uCut;        // 前摄开孔：中心距显示区顶边、胶囊直线段半长、半径
   uniform vec2 uImgScale;
   uniform int uMode;        // 0 实测效果  1 原图  2 离轴角分布
-  uniform float uGlare;     // 玻璃反光（示意，默认关）
-  uniform vec3 uCam;        // 镜头位置（手机局部坐标），只用于示意反光
 
   vec3 srgb2lin(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
   vec3 lin2srgb(vec3 c) { c = clamp(c, 0.0, 1.0); return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
@@ -85,14 +83,7 @@ const FS = /* glsl */ `
     q.x = max(abs(q.x) - uCut.y, 0.0);
     scr *= smoothstep(uCut.z, uCut.z + px, length(q));
 
-    vec3 col = mix(vec3(0.004), scr, inside);
-    if (uGlare > 0.0) {
-      // 示意：玻璃表面对上方柔光的反射（菲涅耳），可关闭，不属于实测
-      vec3 v = normalize(uCam - vec3(pp, 0.0));
-      float fr = 0.04 + 0.96 * pow(1.0 - clamp(v.z, 0.0, 1.0), 5.0);
-      col += uGlare * fr * vec3(0.9);
-    }
-    outColor = vec4(col, 1.0);
+    outColor = vec4(mix(vec3(0.004), scr, inside), 1.0);
   }`;
 
 export function lutTexture(model: AngleModel) {
@@ -100,7 +91,7 @@ export function lutTexture(model: AngleModel) {
   const tex = new THREE.DataTexture(lut.data, lut.width, lut.height, THREE.RGBAFormat, THREE.FloatType);
   tex.minFilter = tex.magFilter = THREE.NearestFilter;
   tex.needsUpdate = true;
-  return { tex, width: lut.width };
+  return { tex, width: lut.width, data: lut.data };
 }
 
 export function createScreenMaterial() {
@@ -119,8 +110,6 @@ export function createScreenMaterial() {
       uCut: { value: new THREE.Vector3(0.0044, 0, 0.0016) },
       uImgScale: { value: new THREE.Vector2(1, 1) },
       uMode: { value: 0 },
-      uGlare: { value: 0 },
-      uCam: { value: new THREE.Vector3(0, 0, 1) },
     },
   });
 }

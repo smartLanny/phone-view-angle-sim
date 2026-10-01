@@ -1,3 +1,5 @@
 node_modules/
 dist/
 .vite/
+# 本机素材（苹果官网 AR 模型等），版权原因不进公开仓库
+public/local/

@@ -66,6 +66,51 @@ export const CSS = /* css */ `
 .s3d-derived:empty { display: none; }
 .s3d-link { font: inherit; font-size: 12px; color: var(--t2); background: none; border: 0; padding: 6px 0 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 
+/* 机身颜色 */
+.s3d-swatches { display: flex; gap: 10px; margin: 8px 0 4px; }
+.s3d-sw-btn { width: 24px; height: 24px; border-radius: 50%; padding: 0; cursor: pointer; background: var(--c); border: 2px solid rgba(255,255,255,.15); }
+.s3d-sw-btn.on { border-color: #141518; box-shadow: 0 0 0 2px var(--t); }
+
+/* 数据面板：宽屏放在左侧读数下方，手机放在工具栏上方 */
+.s3d-data { position: absolute; left: 20px; top: 178px; width: 300px; max-height: calc(100% - 270px); overflow-y: auto; padding: 12px 14px;
+  border-radius: 14px; background: var(--sf); border: 1px solid var(--ln); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  box-shadow: 0 16px 40px rgba(0,0,0,.4); scrollbar-width: thin; }
+.s3d-data[hidden] { display: none; }
+.s3d.eyeview .s3d-data { top: 196px; }
+.s3d-data-h { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--t2); margin-bottom: 8px; }
+.s3d-data-h i { font-style: normal; font-weight: 500; color: var(--mu); margin-left: 4px; }
+.s3d-seg.mini { padding: 2px; border-radius: 9px; background: rgba(0,0,0,.28); border: 1px solid var(--ln); }
+.s3d-seg.mini button { padding: 3px 10px; font-size: 12px; border-radius: 7px; }
+.s3d-pad { display: block; width: 100%; max-width: 220px; aspect-ratio: 1; margin: 0 auto; }
+.s3d-pad-read { text-align: center; font-size: 12px; color: var(--t2); margin-top: 4px; min-height: 17px; font-variant-numeric: tabular-nums; }
+.s3d-pad-read b { color: var(--t); font-weight: 600; }
+.s3d-pad-scale { max-width: 200px; margin: 6px auto 0; }
+.s3d-ramp { height: 6px; border-radius: 3px; }
+.s3d-ramp-ticks { display: flex; justify-content: space-between; color: var(--mu); font-size: 11px; margin-top: 3px; }
+.s3d-pad-note { font-size: 11px; color: var(--mu); text-align: center; margin-top: 6px; }
+.s3d-pad-note .hatch { display: inline-block; width: 16px; height: 9px; margin-right: 4px; vertical-align: -1px; border-radius: 2px;
+  background: repeating-linear-gradient(135deg, rgba(255,255,255,.45) 0 1px, transparent 1px 4px); border: 1px solid var(--ln2); }
+.s3d-curve-col { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--ln); }
+.s3d-curve-h { font-size: 12px; color: var(--mu); margin-bottom: 6px; }
+.s3d-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--mu); margin-bottom: 6px; }
+.s3d-legend:empty { display: none; }
+.s3d-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.s3d-legend span.on { color: var(--t); }
+.s3d-legend i { width: 14px; height: 2px; border-radius: 1px; }
+.s3d-charts svg { display: block; width: 100%; overflow: visible; }
+.s3d-charts svg + svg { margin-top: 6px; }
+.s3d-charts .ch-title { fill: var(--t2); font-size: 11.5px; }
+.s3d-charts .ch-val { fill: var(--t); font-size: 11.5px; font-weight: 600; }
+.s3d-charts .ch-tick { fill: var(--mu); font-size: 10.5px; }
+.s3d-charts .ch-grid { stroke: rgba(255,255,255,.07); }
+.s3d-charts .ch-base { stroke: rgba(255,255,255,.18); }
+.s3d-charts .ch-cursor { stroke: rgba(255,255,255,.55); }
+.s3d-charts .ch-hover { stroke: rgba(255,255,255,.3); }
+.s3d-charts .ch-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.s3d-charts .ch-hit { fill: transparent; }
+/* 数据面板打开时，宽屏把左侧说明收起，避免拥挤 */
+.s3d.with-data .s3d-note { display: none; }
+
 /* 地铁场景小窗：另一个人的眼睛看到的 */
 .s3d-inset { position: absolute; display: none; pointer-events: none; border-radius: 12px; border: 1px solid rgba(255,157,77,.55); box-shadow: 0 10px 30px rgba(0,0,0,.45); }
 .s3d-inset-cap { position: absolute; left: 0; right: 0; bottom: -1px; transform: translateY(100%); padding: 6px 2px 0; font-size: 12px; display: flex; justify-content: space-between; gap: 8px; }
@@ -103,6 +148,11 @@ export const CSS = /* css */ `
   .s3d-row2 > * { flex: none; }
   .s3d-select span { display: none; }
   .s3d-adjust { bottom: 112px; width: calc(100% - 24px); }
+  .s3d-data { left: 8px; right: 8px; width: auto; top: auto; bottom: 112px; max-height: 46%; padding: 10px; }
+  .s3d.eyeview .s3d-data { top: auto; }
+  .s3d-data-body { display: grid; grid-template-columns: 44% 1fr; gap: 10px; align-items: start; }
+  .s3d-curve-col { margin-top: 0; padding-top: 0; border-top: 0; }
+  .s3d-pad-note { display: none; }
   .s3d.eyeview .s3d-hero [data-k="theta"] { font-size: 40px; }
   .s3d.eyeview .s3d-scene { font-size: 15px; }
   .s3d.eyeview .s3d-stats { font-size: 15px; gap: 14px; }

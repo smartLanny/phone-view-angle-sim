@@ -103,16 +103,21 @@ export const PRESETS: Preset[] = [
     build(ctx, p) {
       const { you, dims } = ctx;
       poseSeated(you, { seatHeight: 0.46, lean: 9, headPitch: 30 });
-      const glassY = TABLE_Y + dims.T + dims.bump;     // 背面相机模组着桌
+      // 平放时底边和背面相机凸起着桌，手机顶端（远离人的一端）略微翘起 α
+      const dy = dims.islandY + dims.H / 2;
+      const len = Math.hypot(dims.bump, dy);
+      const alpha = Math.atan2(dims.bump, dy);
+      const glassY = TABLE_Y + (dims.bump * dims.H / 2 + dy * dims.T) / len;   // 屏幕中心离桌面的高度
       let eye = eyeWorld(you), center = v3(0, 0, 0);
       for (let i = 0; i < 3; i++) {
         const h = eye.y - glassY;
-        center = v3(eye.x, glassY, eye.z + h * Math.tan(p.theta * DEG));
+        // 法线朝人倾斜 α，所以水平距离按 θ + α 算，屏幕中心的离轴角正好是 θ
+        center = v3(eye.x, glassY, eye.z + h * Math.tan(p.theta * DEG + alpha));
         lookAt(you, center);
         eye = eyeWorld(you);
       }
-      // 平放：屏幕朝上，手机顶部朝远离人的方向
-      const phone = phoneMatrix(center, v3(0, 1, 0), v3(0, 0, 1));
+      const normal = v3(0, Math.cos(alpha), -Math.sin(alpha));
+      const phone = phoneMatrix(center, normal, v3(0, Math.sin(alpha), Math.cos(alpha)));
       const r = handOnTable(you, 'r', v3(center.x - 0.22, TABLE_Y + 0.035, center.z - 0.2));
       const l = handOnTable(you, 'l', v3(center.x + 0.22, TABLE_Y + 0.035, center.z - 0.2));
       return {

@@ -56,6 +56,8 @@ export interface PhoneModel {
   spec: DeviceSpec;
   /** 显示区半宽 / 半高（米） */
   half: THREE.Vector2;
+  /** 外观来源：参数化建模 / 苹果官网 AR 模型（本机） */
+  source: 'param' | 'apple';
   setColor(c: ColorWay): void;
   dispose(): void;
 }
@@ -115,7 +117,7 @@ export function buildPhone(spec: DeviceSpec, colorId?: string): PhoneModel {
   setColor(spec.colors.find((c) => c.id === colorId) || spec.colors[0]);
 
   return {
-    group, screen: screen as PhoneModel['screen'], spec, half, setColor,
+    group, screen: screen as PhoneModel['screen'], spec, half, setColor, source: 'param',
     dispose() { body.dispose(); screen.geometry.dispose(); mats.forEach((m) => m.dispose()); scr.dispose(); },
   };
 }

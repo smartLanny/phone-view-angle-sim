@@ -9,7 +9,10 @@ import { simplifyBody, NEUTRAL_MALE } from './simplify';
 import { applyLook, type Look } from './look';
 import { STYLES, gradientTexture } from './styles';
 import { buildPhone, type PhoneModel } from './phone/model';
-import { XIAOMI_18_PRO_MAX, type DeviceSpec } from './phone/devices';
+import { DEVICES, type DeviceSpec } from './phone/devices';
+import { islandCenterY, rearBump } from './phone/geometry';
+import { buildApplePhone, APPLE_VARIANT } from './phone/apple';
+import { createDataPanel, type PanelProfile } from './datapanel';
 import { createModel, anglesOf, type AngData, type AngleModel, type Profile } from './optics/model';
 import { lutTexture } from './optics/screen';
 import { Annotations } from './annotate';
@@ -25,6 +28,9 @@ export interface MountOptions {
   view?: ViewMode;
   pattern?: string;
   privacy?: boolean;
+  device?: string;      // 'xiaomi18pm' | 'iphone18pm'
+  /** 取苹果官网 AR 模型（按颜色变体名）。只在本机提供，拿不到时用参数化模型 */
+  appleIphone?: (variant: string) => Promise<ArrayBuffer | null>;
 }
 
 type Viewer = 'you' | 'nb';
@@ -104,29 +110,59 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   scene.add(you.root, nb.root);
 
   // ---------- 手机与实测模型 ----------
-  const device: DeviceSpec = XIAOMI_18_PRO_MAX;
-  const phone: PhoneModel = buildPhone(device);
+  let device: DeviceSpec = DEVICES.find((d) => d.id === opts.device) || DEVICES[0];
+  const colorOf: Record<string, string> = {};
+  /** 建手机模型：iPhone 优先用苹果官网模型（本机有的话），否则参数化建模 */
+  const makePhone = async (d: DeviceSpec): Promise<PhoneModel> => {
+    const color = colorOf[d.id] || d.colors[0].id;
+    if (d.id === 'iphone18pm' && opts.appleIphone && APPLE_VARIANT[color]) {
+      try {
+        const buf = await opts.appleIphone(APPLE_VARIANT[color]);
+        if (buf) return await buildApplePhone(d, buf);
+      } catch (err) { console.warn('苹果模型加载失败，改用参数化模型', err); }
+    }
+    return buildPhone(d, color);
+  };
+  let phone: PhoneModel = await makePhone(device);
   phone.group.matrixAutoUpdate = false;
   scene.add(phone.group);
-  const dims = { W: device.body.W / 1000, H: device.body.H / 1000, T: device.body.T / 1000, bump: device.body.island.depth / 1000 };
-  const ctx: Ctx = { you, nb, dims };
+  const dimsOf = (d: DeviceSpec) => ({
+    W: d.body.W / 1000, H: d.body.H / 1000, T: d.body.T / 1000,
+    bump: rearBump(d.body) / 1000, islandY: islandCenterY(d.body) / 1000,
+  });
+  const ctx: Ctx = { you, nb, dims: dimsOf(device) };
 
+  // 实测数据按机型名前缀匹配（“iPhone 18 Pro Max GH3” 归到 iPhone 18 Pro Max）。以后加数据只要合并进 data.js
   const models = new Map<string, { model: AngleModel; lut: ReturnType<typeof lutTexture> }>();
   const profilesOf = (dev: DeviceSpec) => opts.data.profiles.filter((p) => p.device === dev.dataDevice || p.device.startsWith(dev.dataDevice + ' '));
-  const hasPrivacy = profilesOf(device).some((p) => p.privacy) && profilesOf(device).some((p) => !p.privacy);
-  const privacyKind = profilesOf(device).find((p) => p.privacy)?.privacyKind || 'mode';
-  let privacy = !!opts.privacy && hasPrivacy;
+  const hasPrivacy = () => profilesOf(device).some((p) => p.privacy) && profilesOf(device).some((p) => !p.privacy);
+  const privacyKind = () => profilesOf(device).find((p) => p.privacy)?.privacyKind || 'mode';
+  let privacy = !!opts.privacy;
   let model!: AngleModel;
-  const useProfile = () => {
-    const ps = profilesOf(device);
-    const p: Profile = ps.find((q) => q.privacy === privacy) || ps[0] || opts.data.profiles[0];
+  let profile!: Profile;
+  const modelOf = (p: Profile) => {
     let m = models.get(p.id);
     if (!m) { const mm = createModel({ angles: opts.data.angles, sets: p.sets }); m = { model: mm, lut: lutTexture(mm) }; models.set(p.id, m); }
+    return m;
+  };
+  const useProfile = () => {
+    const ps = profilesOf(device);
+    profile = ps.find((q) => q.privacy === (privacy && hasPrivacy())) || ps[0] || opts.data.profiles[0];
+    const m = modelOf(profile);
     phone.screen.material.uniforms.uLut.value = m.lut.tex;
     phone.screen.material.uniforms.uLutW.value = m.lut.width;
     model = m.model;
   };
   useProfile();
+  /** 全部数据的最大色偏（粗扫），固定色偏量程，切换机型 / 防窥时刻度不跳 */
+  const JMAX = (() => {
+    let j = 0;
+    for (const p of opts.data.profiles) {
+      const m = modelOf(p).model;
+      for (let th = 5; th <= m.thetaMax; th += 5) for (let ps = 0; ps < 360; ps += 15) j = Math.max(j, m.evalAt(th, ps).jncd);
+    }
+    return [2, 4, 6, 8, 10, 12, 16, 20, 24, 30, 40].find((v) => v >= j) || Math.ceil(j);
+  })();
 
   // 屏幕画面（按机型分辨率生成，铺满宽度不拉伸）
   let patternName = opts.pattern || 'ui';
@@ -154,7 +190,6 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const ann = new Annotations(scene, style.accent, ui);
   const { W: W0, H: H0 } = size();
   const rig = new CameraRig(renderer.domElement, W0 / H0);
-  const privacyLabel = privacyKind === 'film' ? '防窥膜' : '防窥';
   ui.insertAdjacentHTML('beforeend', `
     <div class="s3d-hud">
       <div class="s3d-scene" data-k="scene"></div>
@@ -171,17 +206,28 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       <div class="s3d-row2">
       <div class="s3d-seg" data-k="views"></div>
       <span class="s3d-div"></span>
-      ${hasPrivacy ? `<label class="s3d-toggle"><input type="checkbox" data-k="privacy"><span class="s3d-sw"></span>${privacyLabel}</label>` : ''}
+      <div class="s3d-seg" data-k="devices">${DEVICES.map((d) => `<button data-v="${d.id}" title="${d.name}">${d.name.split(' ')[0]}</button>`).join('')}</div>
+      <label class="s3d-toggle" data-k="privacyRow"><input type="checkbox" data-k="privacy"><span class="s3d-sw"></span><span data-k="privacyLabel">防窥</span></label>
       <label class="s3d-select"><span>屏幕</span><select data-k="pattern">${PATTERNS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
       <button class="s3d-btn" data-k="adjustBtn" aria-expanded="false">调整</button>
+      <button class="s3d-btn" data-k="dataBtn" aria-expanded="false">数据</button>
       </div>
     </div>`);
   const $ = (k: string) => ui.querySelector(`[data-k="${k}"]`) as HTMLElement;
   ($('pattern') as HTMLSelectElement).value = patternName;
   $('pattern').addEventListener('change', (e) => setPattern((e.target as HTMLSelectElement).value));
-  const privEl = ui.querySelector('[data-k="privacy"]') as HTMLInputElement | null;
-  if (privEl) { privEl.checked = privacy; privEl.addEventListener('change', () => { privacy = privEl.checked; useProfile(); }); }
+  const privEl = ui.querySelector('[data-k="privacy"]') as HTMLInputElement;
+  privEl.addEventListener('change', () => { privacy = privEl.checked; useProfile(); });
   const segOn = (k: string, v: string) => ui.querySelectorAll(`[data-k="${k}"] button`).forEach((b) => b.classList.toggle('on', (b as HTMLElement).dataset.v === v));
+  /** 机型相关的界面：防窥开关（小米是“防窥”模式，iPhone 是“防窥膜”）、机型按钮 */
+  const syncDeviceUI = () => {
+    $('privacyRow').style.display = hasPrivacy() ? '' : 'none';
+    $('privacyLabel').textContent = privacyKind() === 'film' ? '防窥膜' : '防窥';
+    privEl.checked = privacy && hasPrivacy();
+    segOn('devices', device.id);
+  };
+  syncDeviceUI();
+  const data = createDataPanel(ui, model.thetaMax);
 
   // ---------- 场景状态与过渡 ----------
   type Snap = { you: PoseSnap; nb: PoseSnap | null; phone: THREE.Matrix4; props: Props; nbAlpha: number; cam: { pos: THREE.Vector3; target: THREE.Vector3 } };
@@ -274,7 +320,11 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const rows = preset.params.map((d) => `
       <label class="s3d-row"><span>${d.label}</span><b data-out="${d.key}">${params[preset.id][d.key]}${d.unit}</b></label>
       <input type="range" data-p="${d.key}" min="${d.min}" max="${d.max}" step="${d.step}" value="${params[preset.id][d.key]}">`).join('');
+    const cur = colorOf[device.id] || device.colors[0].id;
+    const sw = device.colors.map((c) => `<button class="s3d-sw-btn${c.id === cur ? ' on' : ''}" data-color="${c.id}" title="${c.name}" style="--c:${c.swatch}"></button>`).join('');
     box.innerHTML = `<div class="s3d-adjust-h">调整 · ${preset.name}</div>${rows}<div class="s3d-derived" data-k="derived"></div>
+      <div class="s3d-row"><span>机身颜色 · ${device.name}</span></div><div class="s3d-swatches">${sw}</div>
+      <div class="s3d-derived">外观：${phone.source === 'apple' ? '苹果官网 AR 模型（iPhone 18 Pro 等比放大，仅本机）' : '按官方尺寸参数化建模'}</div>
       <button class="s3d-link" data-k="resetParams">恢复默认</button>`;
     updateDerived();
   }
@@ -295,6 +345,14 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     updateDerived();
   });
   $('adjust').addEventListener('click', (e) => {
+    const cb = (e.target as HTMLElement).closest('[data-color]') as HTMLElement | null;
+    if (cb) {
+      colorOf[device.id] = cb.dataset.color!;
+      if (phone.source === 'apple') void swapPhone(device);       // 苹果模型每种颜色是一份文件
+      else phone.setColor(device.colors.find((c) => c.id === cb.dataset.color)!);
+      renderAdjust();
+      return;
+    }
     if ((e.target as HTMLElement).dataset.k !== 'resetParams') return;
     params[preset.id] = { ...preset.defaults };
     renderAdjust();
@@ -344,10 +402,47 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       const opts2 = preset.id === 'subway' ? ['explain', 'eye:nb', 'eye:you'] : ['explain', 'eye:you'];
       const cur = rig.mode === 'explain' ? 'explain' : `eye:${preset.id === 'subway' ? viewer : 'you'}`;
       pickView(opts2[(opts2.indexOf(cur) + 1) % opts2.length]);
-    } else if (k === 'p' && privEl) { privEl.checked = !privEl.checked; privacy = privEl.checked; useProfile(); }
+    } else if (k === 'p' && hasPrivacy()) { privEl.checked = !privEl.checked; privacy = privEl.checked; useProfile(); }
+    else if (k === 'd') setData(!data.visible);
     else return;
     e.preventDefault();
   });
+
+  // ---------- 机型切换 ----------
+  let loading = 0;
+  const swapPhone = async (d: DeviceSpec) => {
+    const my = ++loading;
+    if (d.id === 'iphone18pm' && opts.appleIphone) $('warn').textContent = '正在加载 iPhone 模型…';
+    const next = await makePhone(d);
+    if (my !== loading) { next.dispose(); return false; }   // 期间又切了别的，丢掉
+    scene.remove(phone.group);
+    phone.dispose();
+    device = d;
+    phone = next;
+    phone.group.matrixAutoUpdate = false;
+    phone.group.matrix.copy(phoneM);
+    scene.add(phone.group);
+    ctx.dims = dimsOf(device);
+    useProfile();
+    setPattern(patternName);             // 按新机型分辨率重新生成画面
+    syncDeviceUI();
+    renderAdjust();
+    return true;
+  };
+  const setDevice = async (id: string, animate = true) => {
+    const d = DEVICES.find((x) => x.id === id);
+    if (!d || d === device) return;
+    segOn('devices', d.id);
+    if (await swapPhone(d)) goto(preset, animate);   // 尺寸不同，重新摆手和手机
+  };
+  $('devices').addEventListener('click', (e) => { const b = (e.target as HTMLElement).closest('button'); if (b) setDevice(b.dataset.v!); });
+  const setData = (on: boolean) => {
+    data.setVisible(on);
+    $('dataBtn').classList.toggle('on', on);
+    $('dataBtn').setAttribute('aria-expanded', String(on));
+    host.classList.toggle('with-data', on);
+  };
+  $('dataBtn').addEventListener('click', () => setData(!data.visible));
 
   goto(preset, false);
   setView(opts.view || 'explain');
@@ -403,7 +498,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const up = new THREE.Vector3(0, 1, 0).transformDirection(phoneM);
     const fitFov = (eye: THREE.Vector3, fill: number) => {
       const dist = eye.distanceTo(scr);
-      const ang = 2 * Math.atan((dims.H / 2) / dist) * 180 / Math.PI;
+      const ang = 2 * Math.atan((ctx.dims.H / 2) / dist) * 180 / Math.PI;
       return THREE.MathUtils.clamp(ang / fill, 16, 60);
     };
     rig.setEyeFov(fitFov(mainEye, W / H < 1 ? 0.62 : 0.7));
@@ -412,7 +507,6 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     inv.copy(phoneM).invert();
     const u = phone.screen.material.uniforms;
     u.uEye.value.copy(mainEye).applyMatrix4(inv);
-    u.uCam.value.copy(rig.camera.position).applyMatrix4(inv);
     rig.camera.updateMatrixWorld();
     lookYou.setFade(figFade * reachFade);
     lookNb.setFade(figFade * nbAlpha);
@@ -426,6 +520,20 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     renderer.setViewport(0, 0, W, H);
     renderer.render(scene, rig.camera);
     ann.layout(rig.camera, mainEye, phoneM, phone.half, W, H);
+
+    // 数据面板（打开时才算）
+    if (data.visible) {
+      const ps = hasPrivacy() ? [...profilesOf(device)].sort((a, b) => Number(a.privacy) - Number(b.privacy)) : [profile];
+      const film = privacyKind() === 'film';
+      const panelProfiles: PanelProfile[] = ps.map((p) => ({
+        id: p.id, label: p.privacy ? (film ? '贴防窥膜' : '防窥开启') : (film ? '未贴膜' : '防窥关闭'),
+        model: modelOf(p).model, lut: modelOf(p).lut, active: p.id === profile.id,
+      }));
+      const am = anglesOf(mainEye.clone().applyMatrix4(inv));
+      const eyes = [{ ...am, who: sub ? (mainViewer === 'nb' ? '旁人' : '你') : '眼睛' }];
+      if (otherEye) eyes.push({ ...anglesOf(otherEye.clone().applyMatrix4(inv)), who: mainViewer === 'nb' ? '你' : '旁人' });
+      data.update(panelProfiles, eyes, JMAX, device.name);
+    }
 
     // 地铁场景：角落小窗，用另一个人的眼睛对同一部手机再渲染一次
     const inset = $('inset');
@@ -480,7 +588,10 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     get phoneMatrix() { return phoneM.clone(); },
     setScene(id: string, animate = true) { const p = PRESETS.find((q) => q.id === id); if (p) goto(p, animate); },
     setView, setViewer, setPattern,
-    setPrivacy(on: boolean) { privacy = on && hasPrivacy; if (privEl) privEl.checked = privacy; useProfile(); },
+    setPrivacy(on: boolean) { privacy = on; syncDeviceUI(); useProfile(); },
+    setDevice(id: string) { return setDevice(id, false); },
+    get phoneSource() { return phone.source; },
+    setData,
     setParam(key: string, v: number) { params[preset.id][key] = v; applySteady(buildState(preset), false); renderAdjust(); },
     /** 调试：从场景 from 过渡到 to，停在进度 p（0–1），用来按进度截过渡帧 */
     seek(from: string, to: string, p: number) {

@@ -9,8 +9,8 @@ const DEG = Math.PI / 180;
 const X = new THREE.Vector3(1, 0, 0);
 const Z = new THREE.Vector3(0, 0, 1);
 
-/** 手机外形尺寸（米）：宽、高、厚，外加背面相机模组凸起 */
-export interface PhoneDims { W: number; H: number; T: number; bump: number }
+/** 手机外形尺寸（米）：宽、高、厚；背面最大凸起（相机平台 + 镜头）与平台中心的 y */
+export interface PhoneDims { W: number; H: number; T: number; bump: number; islandY: number }
 
 export interface SeatParams {
   seatHeight: number;

@@ -50,4 +50,40 @@ export const XIAOMI_18_PRO_MAX: DeviceSpec = {
   rearDisplay: true,
 };
 
-export const DEVICES = [XIAOMI_18_PRO_MAX];
+export const IPHONE_18_PRO_MAX: DeviceSpec = {
+  id: 'iphone18pm',
+  name: 'iPhone 18 Pro Max',
+  dataDevice: 'iPhone 18 Pro Max',
+  body: {
+    // 官方：163.4 × 78.0 × 8.75 mm；含相机平台 11.54 mm、含镜头 13.77 mm（沿用原网页 devices.js 的数值）
+    W: 78.0, H: 163.4, T: 8.75,
+    R: 12.8,                    // 估计
+    glassInset: 1.0, backInset: 0.9, fillet: 0.6, sideBulge: 0,
+    // 铝合金一体机身，顶部通栏相机平台（与机身同材质），平台凸起 2.79 mm
+    island: { w: 76.2, h: 40, top: 0.9, r: [11.9, 2.0], depth: 2.79, mat: 'frame', rim: 0 },
+    backMat: 'frame',
+    // 三摄呈三角形排布在平台一侧（从背面看在左侧），镜头再凸起约 2.2 mm（估计位置）
+    lenses: [[26.5, 9, 8.25, 2.2], [26.5, -9, 8.25, 2.2], [11.5, 0, 8.25, 2.2]],
+    flats: [
+      { x: -27, y: 10, w: 6.0, h: 6.0, r: 3.0, mat: MAT.FLASH, island: true },    // 闪光灯
+      { x: -27, y: -10, w: 6.4, h: 6.4, r: 3.2, mat: MAT.DARK, island: true },    // LiDAR
+      { x: -18, y: 0, w: 1.4, h: 1.4, r: 0.7, mat: MAT.DARK, island: true },      // 麦克风
+      // 平台下方的玻璃窗（无线充电区），颜色与机身相同（估计尺寸）
+      { x: 0, y: -21.5, w: 70.5, h: 104, r: 9, mat: MAT.BACK },
+    ],
+    // 左侧：操作按钮、音量 +/−；右侧：电源键、相机控制（估计位置）
+    buttons: [[31, 7, -1], [44, 12, -1], [58, 12, -1], [48, 20, 1], [100, 17, 1]],
+    buttonThick: 2.4, buttonOut: 0.5,
+  },
+  // 6.9″（标准矩形 6.86″），2868 × 1320 @460ppi；灵动岛宽约 14 mm
+  screen: { diag: 6.86, resW: 1320, resH: 2868, corner: 10.3, cutout: { y: 4.9, half: 4.0, r: 3.05 } },
+  colors: [
+    { id: 'burgundy', name: '酒红色', swatch: '#661c2c', frame: '#5a1a28', back: '#62202e', backRough: 0.5 },
+    { id: 'glacier', name: '冰川色', swatch: '#b9cddc', frame: '#a9bfd0', back: '#b6cada', backRough: 0.5 },
+    { id: 'silver', name: '银色', swatch: '#e3e4e5', frame: '#d6d7d9', back: '#e6e6e7', backRough: 0.5 },
+    { id: 'black', name: '黑色', swatch: '#2e2f33', frame: '#2a2b2f', back: '#2c2d31', backRough: 0.5 },
+  ],
+  rearDisplay: false,
+};
+
+export const DEVICES = [XIAOMI_18_PRO_MAX, IPHONE_18_PRO_MAX];

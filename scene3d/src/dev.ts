@@ -4,6 +4,7 @@
  */
 import './legacy/avatar.js';
 import './legacy/patterns.js';
+import './legacy/viz.js';
 import { mount } from './app';
 import { loadAngData } from './optics/model';
 
@@ -13,6 +14,12 @@ const data = await loadAngData('./data/ang_data.js');
 await window.Patterns.ready;
 const app = await mount(host, {
   privacy: q.get('privacy') === '1',
+  device: q.get('device') || undefined,
+  // 本机的苹果官网模型（public/local/，不进仓库）；没有就用参数化模型
+  appleIphone: q.get('apple') === '0' ? undefined : async (v) => {
+    const r = await fetch(`./local/phone_${v}.glb`);
+    return r.ok ? r.arrayBuffer() : null;
+  },
   data,
   person: './models/ubc/Superhero_Male_FullBody.gltf',
   makePattern: (n, w, h) => window.Patterns.make(n, w, h),
@@ -25,6 +32,7 @@ if (q.has('privacy')) app.setPrivacy(q.get('privacy') === '1');
 if (q.has('viewer')) app.setViewer(q.get('viewer') as 'you' | 'nb');
 if (q.has('from')) app.seek(q.get('from')!, q.get('scene') || 'normal', +(q.get('p') || 0.5));
 for (const [k, v] of q) if (k.startsWith('param.')) app.setParam(k.slice(6), +v);
+if (q.get('data') === '1') app.setData(true);
 await app.ready;
 (window as any).s3d = app;
 (window as any).__ready = true;

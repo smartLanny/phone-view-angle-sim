@@ -18,8 +18,11 @@ export interface BodySpec {
   fillet: number;         // 中框前后圆弧高度
   sideBulge: number;      // 中框微弧外凸量
   island: { w: number; h: number; top: number; r: number | [number, number]; depth: number; mat: 'glass' | 'frame'; rim: number };
+  /** 背面主体材质：'glass' 玻璃 / 玻纤后盖；'frame' 与中框同一块金属（iPhone 铝合金一体机身，玻璃窗用 flats 加） */
+  backMat?: 'glass' | 'frame';
   lenses: [number, number, number, number][];          // [x, y(相对模组中心), 半径, 凸起高度]
-  flats: { x: number; y: number; w: number; h: number; r: number; mat: number }[];   // 背面平贴部件（相对机身中心）
+  /** 背面平贴部件：相对机身中心；island 为 true 时贴在相机平台顶面、y 相对平台中心 */
+  flats: { x: number; y: number; w: number; h: number; r: number; mat: number; island?: boolean }[];
   buttons: [number, number, number][];                 // [距顶部, 长度, 侧(1 右 / −1 左)]
   buttonThick: number; buttonOut: number;
 }
@@ -132,6 +135,11 @@ function cap(m: Builder, B: Basis, hw: number, hh: number, r: number | [number, 
 
 const quarter = <T>(n: number, fn: (p: number) => T) => Array.from({ length: n + 1 }, (_, k) => fn(((k / n) * Math.PI) / 2));
 
+/** 平台中心的 y（机身局部，mm） */
+export const islandCenterY = (s: BodySpec) => s.H / 2 - s.island.top - s.island.h / 2;
+/** 背面最大凸起（平台 + 镜头），mm */
+export const rearBump = (s: BodySpec) => s.island.depth + Math.max(0, ...s.lenses.map((l) => l[3])) + 0.5;
+
 export function buildBody(s: BodySpec, scale = 0.001) {
   const hw = s.W / 2, hh = s.H / 2, T = s.T, f = s.fillet, sb = s.sideBulge;
   const m = new Builder();
@@ -146,7 +154,7 @@ export function buildBody(s: BodySpec, scale = 0.001) {
   }
   prof.push(...quarter(8, (p) => ({ d: sb + (s.backInset - sb) * (1 - Math.sin(p)), w: -T + f * (1 - Math.cos(p)) })).reverse());
   sweep(m, B, hw, hh, s.R, prof, 24, MAT.FRAME);
-  cap(m, B, hw, hh, s.R, s.backInset, -T, -1, 24, MAT.BACK);
+  cap(m, B, hw, hh, s.R, s.backInset, -T, -1, 24, s.backMat === 'frame' ? MAT.FRAME : MAT.BACK);
 
   // 相机模组：金属围边 + 顶面（玻璃或与中框同材质）
   const I = s.island;
@@ -181,8 +189,8 @@ export function buildBody(s: BodySpec, scale = 0.001) {
   }
   // 背面平贴部件（潜望/传感器窗口、闪光灯）
   for (const fl of s.flats) {
-    const F = basis([fl.x, fl.y, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]);
-    cap(m, F, fl.w / 2, fl.h / 2, fl.r, 0, -T - 0.06, -1, 16, fl.mat);
+    const F = basis([fl.x, fl.island ? iy + fl.y : fl.y, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]);
+    cap(m, F, fl.w / 2, fl.h / 2, fl.r, 0, (fl.island ? itop : -T) - 0.06, -1, 16, fl.mat);
   }
 
   // 侧键
