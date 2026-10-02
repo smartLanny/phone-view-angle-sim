@@ -46,6 +46,7 @@ const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 
 const autoScale = (W: number, H: number) => THREE.MathUtils.clamp(Math.min(W / 1366, H / 820), 1, 3);
 const SCALE_KEY = 's3d-ui-scale';
 const HOLD_KEY = 's3d-hold';
+const AXIS_KEY = 's3d-ann-axis';   // 讲解视角的视线标在屏幕上下还是左右
 /** 视角按钮（地铁场景里“人眼视角”叫“你的视角”，另有“旁人视角”） */
 const VIEW_IDS = ['explain', 'eye:you', 'eye:nb', 'stereo'];
 const viewName = (id: string, sub: boolean) => ({ explain: '讲解视角', 'eye:you': sub ? '你的视角' : '人眼视角', 'eye:nb': '旁人视角', stereo: '双眼视差' } as Record<string, string>)[id];
@@ -258,6 +259,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       <span class="s3d-div"></span>
       <div class="s3d-row2">
       <div class="s3d-seg" data-k="views"></div>
+      <div class="s3d-axis" title="讲解视角里的视线和读数标在屏幕上下（顶 / 中 / 底）还是左右（左 / 中 / 右）（A）"><span>视线</span><div class="s3d-seg" data-k="axis"><button data-v="v">上下</button><button data-v="h">左右</button></div></div>
       <span class="s3d-div"></span>
       <div class="s3d-seg" data-k="devices">${DEVICES.map((d) => `<button data-v="${d.id}" title="${d.name}">${d.name.split(' ')[0]}</button>`).join('')}</div>
       <label class="s3d-toggle" data-k="privacyRow"><input type="checkbox" data-k="privacy"><span class="s3d-sw"></span><span data-k="privacyLabel">防窥</span></label>
@@ -275,13 +277,44 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   $('pattern').addEventListener('change', (e) => setPattern((e.target as HTMLSelectElement).value));
   const privEl = ui.querySelector('[data-k="privacy"]') as HTMLInputElement;
   privEl.addEventListener('change', () => { privacy = privEl.checked; useProfile(); });
+  /** 工具栏一行放不下时排成两行（第一行场景，第二行其他）；多出来的高度让上方的面板、小窗、标注往上让 */
+  let barExtra = 0;
+  function fitBar() {
+    const bar = ui.querySelector('.s3d-bar') as HTMLElement;
+    bar.classList.remove('two-rows', 'tight');
+    let extra = 0;
+    const over = () => bar.scrollWidth > bar.clientWidth + 1;
+    if (!matchMedia('(max-width: 980px)').matches && over()) {
+      const h1 = bar.offsetHeight;
+      bar.classList.add('two-rows');
+      if (over()) bar.classList.add('tight');       // 第二行也放不下：第二行再换行
+      extra = bar.offsetHeight - h1;
+    }
+    barExtra = extra;
+    host.style.setProperty('--bar-extra', extra + 'px');
+    ann.bottomPad = 90 + extra;
+  }
   const segOn = (k: string, v: string) => ui.querySelectorAll(`[data-k="${k}"] button`).forEach((b) => b.classList.toggle('on', (b as HTMLElement).dataset.v === v));
+  /** 讲解视角的视线标在屏幕上下还是左右：切换时测点在屏幕上转过去，标注重新显示一会儿 */
+  const setAxis = (a: 'v' | 'h', animate = true) => {
+    const changed = a !== ann.axis;
+    ann.setAxis(a, animate);
+    segOn('axis', a);
+    saveJSON(AXIS_KEY, a);
+    if (!animate) return;
+    pokeAnn();
+    // 讲解镜头也转到看得清这个方向夹角的机位（正在换场景时由过渡负责转过去）
+    if (changed && state && !trans) camTween = { from: rig.getExplainBase(), to: camOf(state), t0: performance.now(), dur: 900 };
+  };
+  setAxis(loadJSON<string>(AXIS_KEY, 'v') === 'h' ? 'h' : 'v', false);
+  $('axis').addEventListener('click', (e) => { const b = (e.target as HTMLElement).closest('button'); if (b) setAxis(b.dataset.v as 'v' | 'h'); });
   /** 机型相关的界面：防窥开关（小米是“防窥”模式，iPhone 是“防窥膜”）、机型按钮 */
   const syncDeviceUI = () => {
     $('privacyRow').style.display = hasPrivacy() ? '' : 'none';
     $('privacyLabel').textContent = privacyKind() === 'film' ? '防窥膜' : '防窥';
     privEl.checked = privacy && hasPrivacy();
     segOn('devices', device.id);
+    fitBar();          // 防窥开关随机型显示 / 隐藏
   };
   syncDeviceUI();
   const data = createDataPanel(ui, model.thetaMax);
@@ -315,6 +348,39 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   });
   const startFade = (to: number, ms = 300) => { fadeFrom = figFade; fadeTo = to; fadeT0 = performance.now(); fadeDur = ms; };
 
+  /**
+   * 讲解机位：视线标在“上下”时用场景自己的机位（大多从侧面看，上下的夹角看得清）；
+   * 标在“左右”时转到垂直于“眼睛—屏幕左右两端”这个平面的方向去看（多半是从上往下看），左右的夹角才看得清。
+   * 距离、视场、看的中心和场景机位一样，再带一点原来的方向，保留立体感。
+   */
+  const camOf = (s: SceneState) => {
+    const base = s.explain;
+    if (ann.axis !== 'h') return base;
+    const eye = s.nbEye && viewer === 'nb' ? s.nbEye : s.eye;
+    const scr = new THREE.Vector3().setFromMatrixPosition(s.phone);
+    const X = new THREE.Vector3(1, 0, 0).transformDirection(s.phone);
+    const n = new THREE.Vector3().crossVectors(scr.clone().sub(eye).normalize(), X);
+    const bd = base.pos.clone().sub(base.target), dist = bd.length();
+    if (n.lengthSq() < 1e-6 || dist < 1e-6) return base;
+    n.normalize(); bd.normalize();
+    if (n.y < -0.2 || (Math.abs(n.y) <= 0.2 && n.dot(bd) < 0)) n.negate();   // 从上面（或原机位那一侧）看
+    const dir = n.multiplyScalar(0.85).addScaledVector(bd, 0.4).normalize();
+    return { pos: base.target.clone().addScaledVector(dir, dist), target: base.target.clone(), fov: base.fov };
+  };
+  /** 切换“上下 / 左右”时讲解镜头绕看的中心平滑转过去 */
+  let camTween: null | { from: { pos: THREE.Vector3; target: THREE.Vector3; fov: number }; to: { pos: THREE.Vector3; target: THREE.Vector3; fov: number }; t0: number; dur: number } = null;
+  const stepCamTween = (now: number) => {
+    if (!camTween) return;
+    const k = Math.min(1, (now - camTween.t0) / camTween.dur), e = ease(k);
+    const { from: f, to: t } = camTween;
+    const tg = f.target.clone().lerp(t.target, e);
+    const v0 = f.pos.clone().sub(f.target), v1 = t.pos.clone().sub(t.target);
+    const q = new THREE.Quaternion().setFromUnitVectors(v0.clone().normalize(), v1.clone().normalize());
+    const v = v0.clone().normalize().applyQuaternion(new THREE.Quaternion().slerp(q, e)).multiplyScalar(v0.length() + (v1.length() - v0.length()) * e);
+    rig.setExplain(tg.clone().add(v), tg, f.fov + (t.fov - f.fov) * e);
+    if (k >= 1) camTween = null;
+  };
+
   const applySteady = (s: SceneState, resetCam: boolean) => {
     state = s;
     applyPose(you, s.you);
@@ -323,7 +389,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     props = { ...s.props };
     nbAlpha = s.nb ? 1 : 0;
     lieW = s.lying ? 1 : 0;
-    if (resetCam) rig.setExplain(s.explain.pos, s.explain.target, s.explain.fov);
+    if (resetCam) { const c = camOf(s); rig.setExplain(c.pos, c.target, c.fov); }
   };
 
   const describe = () => {
@@ -336,11 +402,13 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     if ($('views').dataset.html !== html) { $('views').innerHTML = html; $('views').dataset.html = html; }
     syncViewBtn();
     renderAdjust();
+    fitBar();          // 视角按钮个数随场景变（地铁多一个），重新量工具栏
   };
 
   /** 换场景：视角沿用当前的（人眼视角时镜头一直跟着眼睛走，双眼视差保持当前显示方式），只有讲解机位换到新场景的取景 */
   const goto = (p: Preset, animate = true) => {
     paramTween = null;
+    camTween = null;
     const target = buildState(p);
     if (!animate || !state) { trans = null; preset = p; applySteady(target, true); describe(); startFade(FADE_TO, 1); return; }
     trans = { a: snapNow(), b: target, t0: performance.now(), dur: TRANSITION_MS };
@@ -390,7 +458,8 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     for (const k of Object.keys(props) as (keyof Props)[]) props[k] = a.props[k] + (b.props[k] - a.props[k]) * e;
     nbAlpha = a.nbAlpha + ((b.nb ? 1 : 0) - a.nbAlpha) * e;
     lieW = a.lie + ((b.lying ? 1 : 0) - a.lie) * e;
-    rig.setExplain(a.cam.pos.clone().lerp(b.explain.pos, e), a.cam.target.clone().lerp(b.explain.target, e), b.explain.fov);
+    const bc = camOf(b);
+    rig.setExplain(a.cam.pos.clone().lerp(bc.pos, e), a.cam.target.clone().lerp(bc.target, e), bc.fov);
     if (raw >= 1 && trans.p === undefined) {
       trans = null;
       applySteady(b, true);
@@ -507,6 +576,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       pickView(opts2[(opts2.indexOf(cur) + 1) % opts2.length]);
     } else if (k === 'p' && hasPrivacy()) { privEl.checked = !privEl.checked; privacy = privEl.checked; useProfile(); }
     else if (k === 'd') setData(!data.visible);
+    else if (k === 'a') setAxis(ann.axis === 'v' ? 'h' : 'v');
     else if (k === 'b') { if (stereo.active && !stereo.leaving) stereo.stop(true); else pickView('stereo'); }
     else if (k === '=' || k === '+') setUserScale(userScale + 0.1);       // 现场放大 / 缩小界面与标注
     else if (k === '-' || k === '_') setUserScale(userScale - 0.1);
@@ -618,15 +688,17 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   // 编排时间线：从工具栏拖按钮上来插入，左右拖排序，拖出删除；播放按时间线走
   const sceneName = (id: string) => PRESETS.find((p) => p.id === id)?.name || id;
   const itemName = (id: string, sc: string) => id.startsWith('dev:') ? (DEVICES.find((d) => d.id === id.slice(4))?.name.split(' ')[0] || id)
-    : id.startsWith('priv:') ? (id === 'priv:on' ? '防窥 开' : '防窥 关') : viewName(id, sc === 'subway');
+    : id.startsWith('priv:') ? (id === 'priv:on' ? '防窥 开' : '防窥 关')
+    : id.startsWith('ann:') ? (id === 'ann:h' ? '视线 左右' : '视线 上下') : viewName(id, sc === 'subway');
   const tl = createTimeline($('tl'), {
     labels: { scene: sceneName, item: itemName },
     validScene: (id) => PRESETS.some((p) => p.id === id),
-    validItem: (id) => VIEW_IDS.includes(id) || id === 'priv:on' || id === 'priv:off' || (id.startsWith('dev:') && DEVICES.some((d) => d.id === id.slice(4))),
+    validItem: (id) => VIEW_IDS.includes(id) || id === 'priv:on' || id === 'priv:off' || id === 'ann:v' || id === 'ann:h' || (id.startsWith('dev:') && DEVICES.some((d) => d.id === id.slice(4))),
     sources: [
       { el: $('scenes'), kind: 'scene' },
       { el: $('views'), kind: 'item' },
       { el: $('devices'), kind: 'item', map: (v) => 'dev:' + v },
+      { el: $('axis'), kind: 'item', map: (v) => 'ann:' + v },
       // 防窥开关：拖上去的是它现在的状态
       { el: $('privacyRow'), kind: 'item', pick: () => ({ value: privEl.checked ? 'priv:on' : 'priv:off', text: privEl.checked ? '防窥 开' : '防窥 关' }) },
     ],
@@ -642,6 +714,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const applyItem = (it: string) => {
     if (it.startsWith('dev:')) void setDevice(it.slice(4));
     else if (it.startsWith('priv:')) { if (hasPrivacy()) { privacy = it === 'priv:on'; syncDeviceUI(); useProfile(); } }
+    else if (it.startsWith('ann:')) setAxis(it === 'ann:h' ? 'h' : 'v');
     else pickView(it);
   };
   const steps = (): Step[] => tl.segments.flatMap((sg, i): Step[] => sg.items.length
@@ -691,7 +764,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       if (st.item) applyItem(st.item);
     },
     onStep: (st) => tl.highlight(st ? { seg: st.seg, idx: st.idx } : null),
-    settled: () => !trans && !rig.busy && !eyeSwitch && !stereo.busy && !paramTween && !swapping,
+    settled: () => !trans && !rig.busy && !eyeSwitch && !stereo.busy && !paramTween && !swapping && !ann.axisBusy && !camTween,
     hold: () => hold,
     setRecording: (on) => {
       host.classList.toggle('recording', on);
@@ -736,6 +809,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     host.style.setProperty('--k', uiK.toFixed(3));
     document.documentElement.style.setProperty('--s3d-k', uiK.toFixed(3));   // 页面上的模式切换按钮跟着放大
     ann.setScale(uiK);
+    fitBar();
   };
   function setUserScale(v: number) {
     userScale = Math.round(THREE.MathUtils.clamp(v, 0.6, 2.5) * 10) / 10;
@@ -756,6 +830,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   resize();
   const ro = new ResizeObserver(resize);
   ro.observe(host);
+  void document.fonts?.ready.then(() => fitBar());   // 字体加载完宽度会变，再量一次工具栏
 
   const inv = new THREE.Matrix4();
   const tmpQ = new THREE.Quaternion();
@@ -792,6 +867,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const frame = (now: number) => {
     const { W, H } = size();
     stepTransition(now);
+    stepCamTween(now);
     if (paramTween && !trans) {
       const k = ease(Math.min(1, (now - paramTween.t0) / paramTween.dur));
       params[preset.id][paramTween.key] = paramTween.from + (paramTween.to - paramTween.from) * k;
@@ -850,7 +926,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     let covered = false;
     if (stereoOn) {
       covered = stereo.render(now, {
-        renderer, W, H, k: uiK, baseFov: rig.camera.fov, baseQuat: rig.camera.quaternion.clone(), eye: mainEye, screen: scr, up: camUp, phoneInv: inv, model, fitFov,
+        renderer, W, H, k: uiK, bottomExtra: barExtra, baseFov: rig.camera.fov, baseQuat: rig.camera.quaternion.clone(), eye: mainEye, screen: scr, up: camUp, phoneInv: inv, model, fitFov,
         renderEye: (ey, cam, chroma) => {
           u.uEye.value.copy(ey).applyMatrix4(inv);
           u.uChroma.value = chroma;
@@ -872,7 +948,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const insetOn = !!insetViews;
     if (insetViews) {
       const narrow = W < 700;
-      const top = narrow ? 112 : 72 * uiK, capH = (narrow ? 36 : rig.mode === 'eye' ? 50 : 42) * (narrow ? 1 : uiK), gap = (narrow ? 8 : 12) * uiK, bottomRes = narrow ? 140 : 100 * uiK;   // 小窗下方两行说明：名称、读数
+      const top = narrow ? 112 : 72 * uiK, capH = (narrow ? 36 : rig.mode === 'eye' ? 50 : 42) * (narrow ? 1 : uiK), gap = (narrow ? 8 : 12) * uiK, bottomRes = narrow ? 140 : (100 + barExtra) * uiK;   // 小窗下方两行说明：名称、读数
       let iw = Math.round(Math.min(280 * uiK, W * (narrow ? 0.3 : 0.2))), ih = Math.round(iw * 1.25);
       const maxIh = Math.floor((H - top - bottomRes - 2 * capH - gap) / 2);
       if (ih > maxIh) { ih = Math.max(60, maxIh); iw = Math.round(ih / 1.25); }
@@ -928,7 +1004,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, W, H);
     if (!covered) renderer.render(scene, rig.camera);
-    ann.layout(rig.camera, annEye, phoneM, phone.half, W, H);
+    ann.layout(rig.camera, annEye, phoneM, phone.half, W, H, insetOn ? insets[0].rect[0] - 8 * uiK : W);   // 标签不压到右侧小窗
 
     // 数据面板（打开时才算）
     if (data.visible) {

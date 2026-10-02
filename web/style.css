@@ -156,10 +156,6 @@ select option { background: #1b1d22; }
 .mini-select { width: auto; flex: none; padding: 3px 6px; font-size: 12px; border-radius: 7px; }
 .ramp { height: 6px; border-radius: 3px; }
 .ramp-ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 3px; font-variant-numeric: tabular-nums; }
-.hatch-key {
-  display: inline-block; width: 18px; height: 10px; margin: 0 4px -1px 0; border-radius: 2px; vertical-align: baseline;
-  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, .45) 0 1px, transparent 1px 4px); border: 1px solid var(--line-2);
-}
 .angle-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
 .angle-row .chips { gap: 4px; flex-wrap: nowrap; }
 .angle-row .chips button { padding: 5px 8px; font-variant-numeric: tabular-nums; }

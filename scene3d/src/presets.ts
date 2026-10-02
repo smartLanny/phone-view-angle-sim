@@ -23,6 +23,8 @@ export interface SceneState {
   phone: THREE.Matrix4;
   reach: boolean;                    // 手臂是否够得着（够不着时人物淡化）
   lying?: boolean;                   // 躺着：人眼视角的“上”跟着头（不保持世界水平），两只眼睛上下分开
+  eye: THREE.Vector3;                // 你的两眼中点
+  nbEye?: THREE.Vector3;             // 旁人的两眼中点（地铁场景）
   props: Props;
   explain: { pos: THREE.Vector3; target: THREE.Vector3; fov: number };
   derived: Record<string, number>;   // 由参数算出的量（如桌面场景的观看距离）
@@ -85,7 +87,7 @@ export const PRESETS: Preset[] = [
       const { eye, phone, reach } = holding(ctx, p, { seatHeight: 0.46, lean: 2, headPitch: 0, gazePitch: 2, side: 0 });
       const scr = new THREE.Vector3().setFromMatrixPosition(phone);
       return {
-        you: capturePose(ctx.you), nb: null, phone, reach,
+        you: capturePose(ctx.you), nb: null, phone, reach, eye,
         props: { stool: 1, table: 0, bench: 0, bed: 0 },
         explain: camFrom(eye, scr, v3(-0.85, 0.26, -0.5), v3(0, -0.04, 0)),
         derived: {},
@@ -105,7 +107,7 @@ export const PRESETS: Preset[] = [
       const { eye, phone, reach } = holding(ctx, p, { seatHeight: 0.46, lean: 8, headPitch: 18, gazePitch: 28, side: -0.02 });
       const scr = new THREE.Vector3().setFromMatrixPosition(phone);
       return {
-        you: capturePose(ctx.you), nb: null, phone, reach,
+        you: capturePose(ctx.you), nb: null, phone, reach, eye,
         props: { stool: 1, table: 0, bench: 0, bed: 0 },
         explain: camFrom(eye, scr, v3(-0.9, 0.34, -0.38), v3(0, -0.05, 0)),
         derived: {},
@@ -143,7 +145,7 @@ export const PRESETS: Preset[] = [
       const r = handOnTable(you, 'r', v3(center.x - 0.22, TABLE_Y + 0.035, center.z - 0.2), TABLE_Y);
       const l = handOnTable(you, 'l', v3(center.x + 0.22, TABLE_Y + 0.035, center.z - 0.2), TABLE_Y);
       return {
-        you: capturePose(you), nb: null, phone, reach: r && l,
+        you: capturePose(you), nb: null, phone, reach: r && l, eye,
         props: { stool: 1, table: 1, bench: 0, bed: 0 },
         explain: camFrom(eye, center, v3(-0.95, 0.55, -0.55), v3(0, -0.1, 0.06), 32),
         derived: { dist: eye.distanceTo(center) * 100, height: (eye.y - glassY) * 100 },
@@ -179,7 +181,7 @@ export const PRESETS: Preset[] = [
       lookAt(nb, scr);
       armOnLap(nb, 'l'); armOnLap(nb, 'r');
       return {
-        you, nb: capturePose(nb), phone, reach,
+        you, nb: capturePose(nb), phone, reach, eye, nbEye: eyeWorld(nb),
         props: { stool: 0, table: 0, bench: 1, bed: 0 },
         explain: { pos: scr.clone().add(v3(-0.5, 1.45, -1.2)), target: scr.clone().add(v3(-0.24, -0.04, 0.02)), fov: 25 },
         derived: {},
@@ -208,7 +210,7 @@ export const PRESETS: Preset[] = [
       const phone = phoneMatrix(center, normal, up);
       const reach = holdPhoneRight(you, phone, dims, LIE_LEFT);
       return {
-        you: capturePose(you), nb: null, phone, reach, lying: true,
+        you: capturePose(you), nb: null, phone, reach, lying: true, eye,
         props: { stool: 0, table: 0, bench: 0, bed: 1 },
         explain: camFrom(eye, center, v3(-0.5, 0.3, 0.34), v3(0.02, -0.01, 0.06), 36),   // 从脚那头的前上方看：脸、两眼的视线和手机都在画面里
         derived: {},

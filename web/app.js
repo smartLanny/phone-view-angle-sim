@@ -811,7 +811,6 @@
     }
     pad.update({ theta: S.theta, psi: S.psi, rot: S.rot, spokes, hatch, eyes });
     $('padTicks').innerHTML = mf.ticks.map((t) => `<span>${t}</span>`).join('');
-    $('padNote').hidden = !hatch.length;
     updatePadRead();
   }
 

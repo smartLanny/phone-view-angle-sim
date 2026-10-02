@@ -74,6 +74,11 @@ export class CameraRig {
   }
   /** 当前讲解机位（人眼视角时为退出后要回到的机位）。 */
   getExplain() { return { pos: (this.savedPos ?? this.camera.position).clone(), target: this.controls.target.clone() }; }
+  /** 当前讲解机位，换算回 setExplain 用的“拉远前”坐标（含用户手动转过的镜头），用来从当前机位平滑转到新机位 */
+  getExplainBase() {
+    const t = this.controls.target.clone(), p = (this.savedPos ?? this.camera.position).clone();
+    return { pos: t.clone().add(p.sub(t).divideScalar(this.dolly)), target: t, fov: this.baseFov };
+  }
 
   private explainPose(): Pose {
     const c = this.camera.clone();

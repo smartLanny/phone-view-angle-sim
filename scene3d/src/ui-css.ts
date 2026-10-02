@@ -33,6 +33,13 @@ export const CSS = /* css */ `
   padding: 6px; border-radius: 16px; background: var(--sf); border: 1px solid var(--ln);
   -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 16px 40px rgba(0,0,0,.4); max-width: calc((100% - 24px) / var(--k)); }
 .s3d-row2 { display: contents; }
+/* 一行放不下时（见 app.ts fitBar）排成两行：第一行场景，第二行视角和其他；上方的面板按多出来的高度（--bar-extra）往上让 */
+.s3d-bar.two-rows { flex-direction: column; gap: 4px; }
+.s3d-bar.two-rows > .s3d-div { display: none; }
+.s3d-bar.two-rows > .s3d-row2 { display: flex; align-items: center; justify-content: center; gap: 4px 10px; }
+/* 第二行还放不下（窄一些的屏幕）：工具栏占满可用宽度，第二行再换行 */
+.s3d-bar.two-rows.tight { width: calc((100% - 24px) / var(--k)); box-sizing: border-box; }
+.s3d-bar.two-rows.tight > .s3d-row2 { flex-wrap: wrap; }
 .s3d-seg { display: flex; gap: 2px; }
 .s3d-seg button { margin: 0; box-shadow: none; font: inherit; font-size: 13px; color: var(--t2); background: transparent; border: 0; border-radius: 10px; padding: 8px 12px; cursor: pointer; white-space: nowrap; }
 .s3d-seg button:hover:not(:disabled) { color: var(--t); background: rgba(255,255,255,.05); }
@@ -56,7 +63,7 @@ export const CSS = /* css */ `
 .s3d-toggle input:focus-visible + .s3d-sw { outline: 2px solid var(--ac); outline-offset: 2px; }
 
 /* 调整面板 */
-.s3d-adjust { position: absolute; left: 50%; bottom: calc(84px * var(--k)); transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 100%; width: 300px; padding: 14px 16px 12px; border-radius: 14px;
+.s3d-adjust { position: absolute; left: 50%; bottom: calc((84px + var(--bar-extra, 0px)) * var(--k)); transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 100%; width: 300px; padding: 14px 16px 12px; border-radius: 14px;
   background: var(--sf); border: 1px solid var(--ln); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 16px 40px rgba(0,0,0,.4); }
 .s3d-adjust[hidden] { display: none; }
 .s3d-adjust-h { font-size: 12px; font-weight: 600; color: var(--t2); margin-bottom: 8px; }
@@ -88,9 +95,6 @@ export const CSS = /* css */ `
 .s3d-pad-scale { max-width: calc(200px * var(--k)); margin: 6px auto 0; }
 .s3d-ramp { height: calc(6px * var(--k)); border-radius: 3px; }
 .s3d-ramp-ticks { display: flex; justify-content: space-between; color: var(--mu); font-size: calc(11px * var(--k)); margin-top: 3px; }
-.s3d-pad-note { font-size: calc(11px * var(--k)); color: var(--mu); text-align: center; margin-top: 6px; }
-.s3d-pad-note .hatch { display: inline-block; width: 16px; height: 9px; margin-right: 4px; vertical-align: -1px; border-radius: 2px;
-  background: repeating-linear-gradient(135deg, rgba(255,255,255,.45) 0 1px, transparent 1px 4px); border: 1px solid var(--ln2); }
 .s3d-curve-col { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--ln); }
 .s3d-curve-h { font-size: calc(12px * var(--k)); color: var(--mu); margin-bottom: 6px; }
 .s3d-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: calc(11.5px * var(--k)); color: var(--mu); margin-bottom: 6px; }
@@ -170,10 +174,14 @@ export const CSS = /* css */ `
 .st-ipd b { color: var(--t); font-weight: 600; min-width: 46px; text-align: left; font-variant-numeric: tabular-nums; }
 /* 编排时间线（工具栏上方）：每段 = 一个场景 + 这一段里依次展示的视角 / 机型 */
 .s3d-bar .s3d-seg button { user-select: none; -webkit-user-select: none; }
-.s3d-tl:not([hidden]) ~ .s3d-bar :is([data-k="scenes"], [data-k="views"], [data-k="devices"]) button { cursor: grab; }
+.s3d-tl:not([hidden]) ~ .s3d-bar :is([data-k="scenes"], [data-k="views"], [data-k="devices"], [data-k="axis"]) button { cursor: grab; }
+/* 视线标在上下 / 左右：只影响讲解视角，人眼视角里淡一点 */
+.s3d-axis { display: flex; align-items: center; gap: 2px; }
+.s3d-axis > span { font-size: 12px; color: var(--t2); padding: 0 2px 0 8px; white-space: nowrap; }
+.s3d.eyeview .s3d-axis { opacity: .45; }
 .s3d-tl:not([hidden]) ~ .s3d-bar [data-k="privacyRow"] { cursor: grab; }
 .s3d-bar label.tl-src { opacity: .35; }
-.s3d-tl { position: absolute; left: 50%; bottom: calc(84px * var(--k)); transform: translateX(-50%); max-width: calc(100% - 24px); box-sizing: border-box;
+.s3d-tl { position: absolute; left: 50%; bottom: calc((84px + var(--bar-extra, 0px)) * var(--k)); transform: translateX(-50%); max-width: calc(100% - 24px); box-sizing: border-box;
   font-size: calc(13px * var(--k)); padding: .75em .8em .55em; border-radius: 1em; background: var(--sf); border: 1px solid var(--ln);
   -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 16px 40px rgba(0,0,0,.4); }
 .s3d-tl[hidden] { display: none; }
@@ -198,7 +206,7 @@ export const CSS = /* css */ `
 .s3d-play.on { color: #fff; background: var(--ac); border-color: transparent; }
 .s3d-btn:disabled { opacity: .35; cursor: default; }
 /* 提示条（播放 / 导出的状态） */
-.s3d-toast { position: absolute; left: 50%; bottom: calc(86px * var(--k)); transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 100%;
+.s3d-toast { position: absolute; left: 50%; bottom: calc((86px + var(--bar-extra, 0px)) * var(--k)); transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 100%;
   padding: 8px 14px; border-radius: 10px; font-size: 13px; color: var(--t); background: rgba(14,15,18,.86); border: 1px solid var(--ln2);
   -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); opacity: 0; pointer-events: none !important; transition: opacity .25s; white-space: nowrap; max-width: calc((100% - 24px) / var(--k)); }
 .s3d-toast.show { opacity: 1; }
@@ -232,7 +240,6 @@ body.s3d-recording .app-mode { display: none !important; }
   .s3d.eyeview .s3d-data { top: auto; }
   .s3d-data-body { display: grid; grid-template-columns: 44% 1fr; gap: 10px; align-items: start; }
   .s3d-curve-col { margin-top: 0; padding-top: 0; border-top: 0; }
-  .s3d-pad-note { display: none; }
   .s3d.eyeview .s3d-hero [data-k="theta"] { font-size: 40px; }
   .s3d.eyeview .s3d-scene { font-size: 15px; }
   .s3d.eyeview .s3d-stats { font-size: 15px; gap: 14px; }

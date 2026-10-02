@@ -2,7 +2,7 @@
  * 编排：自动播放的时间线（工具栏上方的一条）。
  * 由若干“段”组成，每段是一个场景，后面跟着这一段里依次展示的视角 / 机型（例如 正常手持：讲解视角 → 人眼视角 → 双眼视差）。
  *   - 从下方工具栏把场景、视角、机型按钮拖上来插入（场景 = 新的一段，视角 / 机型 = 插到某一段里的某个位置）；
- *     “防窥”开关拖上来插入的是它当前的状态（先把开关拨到想要的状态再拖）
+ *     “防窥”开关拖上来插入的是它当前的状态（先把开关拨到想要的状态再拖）；“视线 上下 / 左右”拖哪个就插哪个
  *   - 时间线里的按钮左右拖动调整顺序（场景按钮带着整段一起移动），拖出时间线就删除
  *   - 点一下跳到那一步
  * 触屏先长按再拖。时间线存在本机浏览器里。
@@ -56,7 +56,7 @@ export function createTimeline(box: HTMLElement, opts: {
   function render() {
     strip.innerHTML = segs.map((s, i) => `<div class="tl-seg" data-seg="${i}">
         <span class="tl-chip tl-scene${cur?.seg === i && cur.idx === -1 ? ' cur' : ''}" data-seg="${i}" data-idx="-1">${opts.labels.scene(s.scene)}</span>${s.items.map((it, j) =>
-          `<span class="tl-chip${cur?.seg === i && cur.idx === j ? ' cur' : ''}${it.startsWith('dev:') || it.startsWith('priv:') ? ' tl-dev' : ''}" data-seg="${i}" data-idx="${j}">${opts.labels.item(it, s.scene)}</span>`).join('')}</div>`).join('')
+          `<span class="tl-chip${cur?.seg === i && cur.idx === j ? ' cur' : ''}${/^(dev|priv|ann):/.test(it) ? ' tl-dev' : ''}" data-seg="${i}" data-idx="${j}">${opts.labels.item(it, s.scene)}</span>`).join('')}</div>`).join('')
       || '<div class="tl-empty">把场景按钮从下方拖到这里</div>';
   }
   render();

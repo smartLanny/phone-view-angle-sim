@@ -167,6 +167,8 @@ export class Stereo {
     phoneInv: THREE.Matrix4; model: AngleModel; fitFov: (eye: THREE.Vector3, fill: number) => number;
     /** chroma：屏幕色偏的倍数（双眼叠加时放大，其余为 1） */
     renderEye: (eye: THREE.Vector3, cam: THREE.PerspectiveCamera, chroma: number) => void;
+    /** 工具栏排成两行时多出来的高度（未缩放的 px），底部多留出来 */
+    bottomExtra?: number;
   }): boolean {
     if (!this.t0) { this.t0 = now; this.el.hidden = false; }
     const e = this.frozen ?? now - this.t0;
@@ -191,7 +193,7 @@ export class Stereo {
     // ---------- 布局 ----------
     const { W, H, k } = o;
     const narrow = W < 760;
-    const m = (narrow ? 10 : 16) * k, gap = (narrow ? 10 : 16) * k, top = 64 * k, bottom = (narrow ? 272 : 232) * k;
+    const m = (narrow ? 10 : 16) * k, gap = (narrow ? 10 : 16) * k, top = 64 * k, bottom = ((narrow ? 272 : 232) + (o.bottomExtra || 0)) * k;
     const phMax = Math.max(120, H - top - bottom);
     const a = THREE.MathUtils.clamp(((W - 2 * m - gap) / 2) / phMax, 0.42, 0.9);   // 并排时面板宽高比（竖向，框住竖放的手机）
     const pw = Math.floor(Math.min((W - 2 * m - gap) / 2, phMax * a)), ph = Math.floor(pw / a);

@@ -46,7 +46,6 @@ export function createDataPanel(host: HTMLElement, maxTheta: number) {
         <canvas class="s3d-pad" aria-label="各观看方向的实测亮度 / 色偏"></canvas>
         <div class="s3d-pad-read" data-d="read"></div>
         <div class="s3d-pad-scale"><div class="s3d-ramp" data-d="ramp"></div><div class="s3d-ramp-ticks" data-d="ticks"></div></div>
-        <div class="s3d-pad-note"><span class="hatch"></span>斜线区无实测，上下镜像补全</div>
       </div>
       <div class="s3d-curve-col">
         <div class="s3d-curve-h" data-d="dir"></div>
