@@ -1,5 +1,5 @@
 {
-  "description": "2026-10-08 用户提供的源数据快照；方位按文件名，原始文件字节未改。iPhone 18 Pro Max 为同一台 GH3 手机。",
+  "description": "2026-10-08 用户提供的源数据快照；方位按文件名，原始文件字节未改。iPhone 18 Pro Max 为同一台 GH3 手机。华为 Mate 90 Pro Max 典藏版为新增普通状态数据。",
   "files": [
     {
       "file": "小米 18 Pro Max 防窥/可视角度 0° 防窥.ang2",
@@ -96,6 +96,30 @@
     {
       "file": "iPhone 18 Pro Max GH3/可视角 90°.ang2",
       "sha256": "c6b4188c0d16d7ec2ecc897c5301203b5f942fc7a4a7c3e53adbf7deea5d60d1"
+    },
+    {
+      "file": "华为 Mate 90 Pro Max 典藏版/华为 Mate 90 Pro Max 典藏版 0°.ang2",
+      "sha256": "04359d791c0772fce68c9164b954f11f1c0cd082faf51cf839519acd57f9f8d1"
+    },
+    {
+      "file": "华为 Mate 90 Pro Max 典藏版/华为 Mate 90 Pro Max 典藏版 30°.ang2",
+      "sha256": "7205fd06e5b008c53c93e709d75172e05f3082d5cb731783b8ac1e462817b77e"
+    },
+    {
+      "file": "华为 Mate 90 Pro Max 典藏版/华为 Mate 90 Pro Max 典藏版 60°.ang2",
+      "sha256": "77516d4a2f39b73718264786fe601d997bcb9e4df5f6e07344220c48f0015324"
+    },
+    {
+      "file": "华为 Mate 90 Pro Max 典藏版/华为 Mate 90 Pro Max 典藏版 90°.ang2",
+      "sha256": "875d4b233942eeb93ab2ea5c70a5d4ae1f0e73b4f3e7063723a7cec2c35072b2"
+    },
+    {
+      "file": "华为 Mate 90 Pro Max 典藏版/华为 Mate 90 Pro Max 典藏版 120°.ang2",
+      "sha256": "d67c07b3f36a25eaada27d12cef155ca2729516135d274c160f9f8ab517ffd99"
+    },
+    {
+      "file": "华为 Mate 90 Pro Max 典藏版/华为 Mate 90 Pro Max 典藏版 150°.ang2",
+      "sha256": "351bff63ec850c5af47cc0d64620a9ff9c4197e9f8caddc72f4bc56924d47b95"
     }
   ]
 }

@@ -10,7 +10,7 @@ import { loadAngData } from './optics/model';
 
 const q = new URLSearchParams(location.search);
 const host = document.getElementById('stage')!;
-const data = await loadAngData('./data/ang_data.js?v=20261008-six-directions');
+const data = await loadAngData('./data/ang_data.js?v=20261008-mate90');
 await window.Patterns.ready;
 const app = await mount(host, {
   privacy: q.get('privacy') === '1',

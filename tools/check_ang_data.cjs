@@ -8,7 +8,7 @@ const context = { window: {} };
 vm.runInNewContext(fs.readFileSync(path.join(root, 'web/data.js'), 'utf8'), context);
 const payload = context.window.ANG_DATA;
 const { createModel, norm360 } = require('../web/model.js');
-assert.equal(payload.profiles.length, 4);
+assert.equal(payload.profiles.length, 5);
 let checked = 0;
 for (const profile of payload.profiles) {
   const model = createModel({ angles: payload.angles, sets: profile.sets }, { fill: 'vmirror' });
@@ -27,6 +27,6 @@ for (const profile of payload.profiles) {
   assert.ok(model.buildLUT().data.every(Number.isFinite));
 }
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'docs/measurement-sources.json')));
-assert.equal(manifest.files.length, 24);
+assert.equal(manifest.files.length, 30);
 for (const file of manifest.files) assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(root, file.file))).digest('hex'), file.sha256);
-console.log(`Verified 24 source hashes, 4 six-direction profiles, 12 measured rays/profile, ${checked} exact-direction optical samples, and finite LUTs.`);
+console.log(`Verified 30 source hashes, 5 six-direction profiles, 12 measured rays/profile, ${checked} exact-direction optical samples, and finite LUTs.`);

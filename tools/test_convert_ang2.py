@@ -40,7 +40,8 @@ class ConversionTests(unittest.TestCase):
             self.assertEqual(payload['angles'], list(range(-70, 71, 2)))
             self.assertEqual([(p['id'], p['device'], p['privacy']) for p in payload['profiles']], [
                 ('p0', 'iPhone 18 Pro Max GH3', False), ('p1', 'iPhone 18 Pro Max GH3', True),
-                ('p2', '小米 18 Pro Max', False), ('p3', '小米 18 Pro Max', True)])
+                ('p2', '小米 18 Pro Max', False), ('p3', '小米 18 Pro Max', True),
+                ('p4', '华为 Mate 90 Pro Max 典藏版', False)])
             self.assertEqual(payload['profiles'][1]['privacyKind'], 'film')
             self.assertEqual(payload['profiles'][3]['privacyKind'], 'mode')
             for profile in payload['profiles']:

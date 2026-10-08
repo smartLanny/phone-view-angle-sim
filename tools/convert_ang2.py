@@ -21,6 +21,14 @@ import re
 import sys
 
 PRIMARY_KEYS = {"白": "W", "红": "R", "绿": "G", "蓝": "B", "黑": "K"}
+# Profile IDs are part of shared comparison URLs, so keep established assignments stable.
+PROFILE_IDS = {
+    ("iPhone 18 Pro Max GH3", False): "p0",
+    ("iPhone 18 Pro Max GH3", True): "p1",
+    ("小米 18 Pro Max", False): "p2",
+    ("小米 18 Pro Max", True): "p3",
+    ("华为 Mate 90 Pro Max 典藏版", False): "p4",
+}
 
 
 class SafeUnpickler(pickle.Unpickler):
@@ -129,9 +137,23 @@ def main():
             # 路径含“防窥膜”视为贴膜，否则为机器自带的防窥模式
             profile["privacyKind"] = "film" if any("防窥膜" in s["file"] for s in sets) else "mode"
         profiles.append(profile)
-    profiles.sort(key=lambda p: (p["device"], p["privacy"]))
-    for i, p in enumerate(profiles):
-        p["id"] = f"p{i}"
+    profiles.sort(key=lambda p: (
+        (0, int(PROFILE_IDS[(p["device"], p["privacy"])][1:]))
+        if (p["device"], p["privacy"]) in PROFILE_IDS
+        else (1, p["device"], p["privacy"])
+    ))
+    used_ids = set(PROFILE_IDS.values())
+    next_id = len(PROFILE_IDS)
+    for p in profiles:
+        key = (p["device"], p["privacy"])
+        if key in PROFILE_IDS:
+            p["id"] = PROFILE_IDS[key]
+        else:
+            while f"p{next_id}" in used_ids:
+                next_id += 1
+            p["id"] = f"p{next_id}"
+            used_ids.add(p["id"])
+            next_id += 1
 
     payload = {"units": "XYZ (cd/m²)", "angles": angles, "profiles": profiles}
     os.makedirs(os.path.dirname(out), exist_ok=True)
