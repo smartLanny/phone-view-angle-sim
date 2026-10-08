@@ -48,8 +48,8 @@
   }
 
   class Mesh {
-    constructor() { this.pos = []; this.nor = []; this.mat = []; this.idx = []; }
-    vert(p, n, m) { this.pos.push(p[0], p[1], p[2]); this.nor.push(n[0], n[1], n[2]); this.mat.push(m); return this.mat.length - 1; }
+    constructor() { this.pos = []; this.nor = []; this.mat = []; this.uv = []; this.idx = []; }
+    vert(p, n, m, uv = [0, 0]) { this.pos.push(p[0], p[1], p[2]); this.nor.push(n[0], n[1], n[2]); this.mat.push(m); this.uv.push(uv[0], uv[1]); return this.mat.length - 1; }
   }
 
   /**
@@ -83,14 +83,15 @@
     }
   }
 
-  function cap(mesh, B, hw, hh, r, d, w, nw, segs, mat) {
+  function cap(mesh, B, hw, hh, r, d, w, nw, segs, mat, uvOf = null) {
     const ol = outline(hw, hh, r, segs);
     const n = B.n(0, 0, nw);
-    const c = mesh.vert(B.p(0, 0, w), n, mat);
+    const c = mesh.vert(B.p(0, 0, w), n, mat, uvOf ? uvOf(0, 0) : undefined);
     const first = mesh.mat.length;
     for (const o of ol) {
       const rad = o.r - d;
-      mesh.vert(B.p(o.c[0] + o.n[0] * rad, o.c[1] + o.n[1] * rad, w), n, mat);
+      const x = o.c[0] + o.n[0] * rad, y = o.c[1] + o.n[1] * rad;
+      mesh.vert(B.p(x, y, w), n, mat, uvOf ? uvOf(x, y) : undefined);
     }
     for (let i = 0; i < ol.length; i++) mesh.idx.push(c, first + i, first + ((i + 1) % ol.length));
   }
@@ -106,6 +107,10 @@
     const hw = s.W / 2, hh = s.H / 2, T = s.T, f = s.fillet, sb = s.sideBulge;
     const body = new Mesh(), screen = new Mesh();
     const B = basis([0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]);
+    const backUv = s.backTextureCrop && ((x, y) => {
+      const [u0, v0, u1, v1] = s.backTextureCrop;
+      return [u0 + ((hw - x) / s.W) * (u1 - u0), 1 - v1 + ((y + hh) / s.H) * (v1 - v0)];
+    });
 
     const prof = [
       ...quarter(8, (p) => ({ d: sb + (s.glassInset - sb) * (1 - Math.sin(p)), w: -f * (1 - Math.cos(p)) })),
@@ -117,7 +122,7 @@
     }
     prof.push(...quarter(8, (p) => ({ d: sb + (s.backInset - sb) * (1 - Math.sin(p)), w: -T + f * (1 - Math.cos(p)) })).reverse());
     sweep(body, B, hw, hh, s.R, prof, 24, MAT.FRAME);
-    cap(body, B, hw, hh, s.R, s.backInset, -T, -1, 24, MAT.BACK);
+    cap(body, B, hw, hh, s.R, s.backInset, -T, -1, 24, MAT.BACK, backUv);
 
     const iy = hh - s.islandTop - s.islandH / 2;
     const I = basis([0, iy, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]);
@@ -125,7 +130,7 @@
     const iprof = [{ d: 0, w: -T + 0.2 }, ...quarter(6, (p) => ({ d: ifl * (1 - Math.cos(p)), w: -T - (s.islandDepth - ifl) - ifl * Math.sin(p) }))];
     sweep(body, I, s.islandW / 2, s.islandH / 2, s.islandR, iprof, 16, MAT.FRAME);
     cap(body, I, s.islandW / 2, s.islandH / 2, s.islandR, ifl, -T - s.islandDepth, -1, 16,
-      s.islandMat === 'frame' ? MAT.FRAME : MAT.ISLAND);
+      s.islandMat === 'frame' ? MAT.FRAME : MAT.ISLAND, backUv && ((x, y) => backUv(x, iy + y)));
 
     const itop = -T - s.islandDepth;
     for (const [lx, ly, lr, lh] of s.lenses) {
@@ -139,9 +144,11 @@
           { d: ring, w: top + 0.35 },
         ];
         sweep(body, L, lr, lr, lr, lp, 20, MAT.FRAME);
-        cap(body, L, lr, lr, lr, ring, top + 0.35, -1, 20, MAT.ISLAND);
+        cap(body, L, lr, lr, lr, ring, top + 0.35, -1, 20, MAT.ISLAND,
+          backUv && ((x, y) => backUv(lx + x, iy + ly + y)));
       } else {
-        cap(body, L, lr, lr, lr, 0, itop - 0.05, -1, 12, MAT.ISLAND);
+        cap(body, L, lr, lr, lr, 0, itop - 0.05, -1, 12, MAT.ISLAND,
+          backUv && ((x, y) => backUv(lx + x, iy + ly + y)));
       }
     }
 
