@@ -1,0 +1,101 @@
+{
+  "description": "2026-10-08 用户提供的源数据快照；方位按文件名，原始文件字节未改。iPhone 18 Pro Max 为同一台 GH3 手机。",
+  "files": [
+    {
+      "file": "小米 18 Pro Max 防窥/可视角度 0° 防窥.ang2",
+      "sha256": "632e85359c54b2e14ea0254225c0746f35359689882a9acccaac941e9b5fd651"
+    },
+    {
+      "file": "小米 18 Pro Max/可视角度 0°.ang2",
+      "sha256": "aede845aa3ab5a8c5c60a61f523650a1dd2f0289c7a9f435093c32dc21a2db74"
+    },
+    {
+      "file": "小米 18 Pro Max 防窥/可视角度 120° 防窥.ang2",
+      "sha256": "6ae105108c90b75c75126559b28b034d7ad9a4db9e00d05e3aab6ac9f774e7e0"
+    },
+    {
+      "file": "小米 18 Pro Max/可视角度 120°.ang2",
+      "sha256": "6fc0139c28dca1142116f4063192c4f2e89c518ce36afdb7f2aa445f94e06b7a"
+    },
+    {
+      "file": "小米 18 Pro Max 防窥/可视角度 150° 防窥.ang2",
+      "sha256": "7fb091e67946db8a9acce1938f708b65c3000cf895b54fd0be0ba8b688a95e40"
+    },
+    {
+      "file": "小米 18 Pro Max/可视角度 150°.ang2",
+      "sha256": "86bace80457cc1bd7968f94812469173e817680866e900f1c74a3a31a37a73d1"
+    },
+    {
+      "file": "小米 18 Pro Max 防窥/可视角度 30° 防窥.ang2",
+      "sha256": "53bac85d8e59e23e6a10d54e6425f53d063046d68e37684d21a526772cb43a6a"
+    },
+    {
+      "file": "小米 18 Pro Max/可视角度 30°.ang2",
+      "sha256": "36b6ee4850cd29f35f5c97afe8cbf08423c4f77a728548c4cdfc75495144c752"
+    },
+    {
+      "file": "小米 18 Pro Max 防窥/可视角度 60° 防窥.ang2",
+      "sha256": "a4920d0081fdf30c8b1cd11969194cc76b114a1d1ba28d819cfad6f77ea7d538"
+    },
+    {
+      "file": "小米 18 Pro Max/可视角度 60°.ang2",
+      "sha256": "aa734a72186b8dca02c12a1e5c7624d40b9f9862199a0e2f13f24c2dd6cdd51d"
+    },
+    {
+      "file": "小米 18 Pro Max 防窥/可视角度 90° 防窥.ang2",
+      "sha256": "f404d117ab8a944ebdf284b017d46b2a45704114c8a4bc2871795b19f62e6cd8"
+    },
+    {
+      "file": "小米 18 Pro Max/可视角度 90°.ang2",
+      "sha256": "e255047084e529209c62da94c4503d7fae391ba3efb1ecb8120437eaf27aa44f"
+    },
+    {
+      "file": "iPhone 18 Pro Max GH3 防窥膜/可视角 0° 防窥膜.ang2",
+      "sha256": "ecb8ca30259ec0a44baac6eb01be8fd812c6da35cb316e151a8473490784de5e"
+    },
+    {
+      "file": "iPhone 18 Pro Max GH3/可视角 0°.ang2",
+      "sha256": "c2b8bf31513c2170b2f4f80bdbcfc6172a3431b1670cdf0d9bec95f30acdef5a"
+    },
+    {
+      "file": "iPhone 18 Pro Max GH3 防窥膜/可视角 120° 防窥膜.ang2",
+      "sha256": "f642bdb61d649bc05364b572b0fb7f68ecdf783e55bc1436c46f48d876af8059"
+    },
+    {
+      "file": "iPhone 18 Pro Max GH3/可视角 120°.ang2",
+      "sha256": "83cfaecffc9be3ab29b4c0c02ea4c05c5fdd6a91d8159569f02556f667db90a8"
+    },
+    {
+      "file": "iPhone 18 Pro Max GH3 防窥膜/可视角 150° 防窥膜.ang2",
+      "sha256": "8605e18717847d4c2359a4b7f7cbfadf4809ae11fca971fd9101bd729f64f5fa"
+    },
+    {
+      "file": "iPhone 18 Pro Max GH3/可视角 150°.ang2",
+      "sha256": "3460c0bf80a9a987c798804219f4ee0221b45c0458217ea1e242480813c972cf"
+    },
+    {
+      "file": "iPhone 18 Pro Max GH3 防窥膜/可视角 30° 防窥膜.ang2",
+      "sha256": "438566a7766d3bcf783d378278da5447f103a3d44bf75ca974e65077018ea804"
+    },
+    {
+      "file": "iPhone 18 Pro Max GH3/可视角 30°.ang2",
+      "sha256": "46e108605149edc996eb71c386682812069f1853e2bc7ff2c80ec6f1fa9c17ac"
+    },
+    {
+      "file": "iPhone 18 Pro Max GH3 防窥膜/可视角 60° 防窥膜.ang2",
+      "sha256": "b6042d34f38253efa40595bbd460886584a757b144ec65bce3a14e92994ad398"
+    },
+    {
+      "file": "iPhone 18 Pro Max GH3/可视角 60°.ang2",
+      "sha256": "5018d36196a6df94ec4f4c33aaed64e45a3b35020b4657c80c248122ff3167cb"
+    },
+    {
+      "file": "iPhone 18 Pro Max GH3 防窥膜/可视角 90° 防窥膜.ang2",
+      "sha256": "fb9b4227d3a01509c741b371a9f2951d32a4e9116122a5b032320593694a66e2"
+    },
+    {
+      "file": "iPhone 18 Pro Max GH3/可视角 90°.ang2",
+      "sha256": "c6b4188c0d16d7ec2ecc897c5301203b5f942fc7a4a7c3e53adbf7deea5d60d1"
+    }
+  ]
+}
