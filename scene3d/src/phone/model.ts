@@ -81,9 +81,21 @@ export function buildPhone(spec: DeviceSpec, colorId?: string): PhoneModel {
   const seam = new THREE.MeshStandardMaterial({ color: '#0b0b0d', roughness: 0.7, metalness: 0 });
   const lensInner = new THREE.MeshStandardMaterial({ color: '#111216', metalness: 0.2, roughness: 0.75 });   // 镜筒：哑光深灰，不反光
   const lensEye = new THREE.MeshPhysicalMaterial({ color: '#04060c', roughness: 0.05, clearcoat: 1, clearcoatRoughness: 0.02, iridescence: 0.7, iridescenceIOR: 1.8, iridescenceThicknessRange: [250, 600] });
+  // 背面实拍照片（华为）：背面和相机模组顶面都贴同一张照片的对应区域（uv 见 geometry.ts backTextureCrop）
+  let photo: THREE.Texture | null = null, islandPhoto: THREE.MeshPhysicalMaterial | null = null;
+  if (spec.backTexture) {
+    // 照片加载不到（比如开发页没有这张图）就退回纯色
+    photo = new THREE.TextureLoader().load(spec.backTexture, undefined, undefined, () => {
+      back.map = null; back.color.set(spec.colors[0].back); back.needsUpdate = true;
+      if (islandPhoto) { islandPhoto.map = null; islandPhoto.color.set('#101210'); islandPhoto.needsUpdate = true; }
+    });
+    photo.colorSpace = THREE.SRGBColorSpace;
+    photo.anisotropy = 8;
+    islandPhoto = new THREE.MeshPhysicalMaterial({ map: photo, roughness: 0.12, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05 });
+  }
   const mats: THREE.Material[] = new Array(MAT_COUNT);
   mats[MAT.FRAME] = frame; mats[MAT.BUTTON] = frame; mats[MAT.ISLAND_RIM] = frame;
-  mats[MAT.BACK] = back; mats[MAT.ISLAND] = islandGlass;
+  mats[MAT.BACK] = back; mats[MAT.ISLAND] = islandPhoto || islandGlass;
   mats[MAT.LENS_RING] = lensRing; mats[MAT.LENS_GLASS] = lensGlass;
   mats[MAT.DARK] = dark; mats[MAT.FLASH] = flash;
   mats[MAT.SEAM] = seam; mats[MAT.LENS_INNER] = lensInner; mats[MAT.LENS_EYE] = lensEye;
@@ -100,6 +112,7 @@ export function buildPhone(spec: DeviceSpec, colorId?: string): PhoneModel {
   scr.uniforms.uHalf.value.copy(half);
   scr.uniforms.uCorner.value = sc.corner / 1000;
   scr.uniforms.uCut.value.set(sc.cutout.y / 1000, sc.cutout.half / 1000, sc.cutout.r / 1000);
+  (scr.uniforms.uHoles.value as THREE.Vector3[]).forEach((v, i) => { const h = sc.holes?.[i]; v.set(h ? h[0] / 1000 : 0, h ? h[1] / 1000 : 0, h ? h[2] / 1000 : 0); });
   const screen = new THREE.Mesh(buildScreenGeometry(spec.body), scr);
   screen.name = 'screen';
   group.add(screen);
@@ -107,7 +120,8 @@ export function buildPhone(spec: DeviceSpec, colorId?: string): PhoneModel {
   let sparkle: THREE.Texture | null = null;
   const setColor = (c: ColorWay) => {
     frame.color.set(c.frame);
-    back.color.set(c.back);
+    back.color.set(photo ? '#ffffff' : c.back);
+    back.map = photo;
     back.roughness = c.backRough;
     back.metalness = c.backMetal ?? 0;
     back.clearcoat = c.backMetal !== undefined ? 0.2 : 1;      // 磨砂玻璃窗：涂层弱一些，不泛白
@@ -126,6 +140,6 @@ export function buildPhone(spec: DeviceSpec, colorId?: string): PhoneModel {
 
   return {
     group, screen: screen as PhoneModel['screen'], spec, half, setColor, source: 'param',
-    dispose() { body.dispose(); screen.geometry.dispose(); mats.forEach((m) => m.dispose()); scr.dispose(); },
+    dispose() { body.dispose(); screen.geometry.dispose(); mats.forEach((m) => m.dispose()); scr.dispose(); photo?.dispose(); islandGlass.dispose(); },
   };
 }

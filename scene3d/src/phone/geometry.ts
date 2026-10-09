@@ -31,6 +31,8 @@ export interface BodySpec {
   /** 背面平贴部件：相对机身中心；island 为 true 时贴在相机平台顶面、y 相对平台中心 */
   flats: { x: number; y: number; w: number; h: number; r: number; mat: number; island?: boolean }[];
   buttons: [number, number, number][];                 // [距顶部, 长度, 侧(1 右 / −1 左)]
+  /** 背面贴实拍照片时，照片里机身所占的范围 [左, 上, 右, 下]（0–1，按照片从上往下量）；背面、相机模组顶面、镜头都按这个取照片 */
+  backTextureCrop?: [number, number, number, number];
   buttonThick: number; buttonOut: number;
 }
 
@@ -124,11 +126,11 @@ function sweep(m: Builder, B: Basis, hw: number, hh: number, r: number | [number
   }
 }
 
-/** 圆角矩形平面。uvFlip: 背面部件从背面看时 x 方向反过来。 */
-function cap(m: Builder, B: Basis, hw: number, hh: number, r: number | [number, number], d: number, w: number, nw: number, segs: number, mat: number, uvFlip = false) {
+/** 圆角矩形平面。uvFlip: 背面部件从背面看时 x 方向反过来。uvMap: 自定义 uv（参数是这个平面自己坐标里的 u、v，单位 mm） */
+function cap(m: Builder, B: Basis, hw: number, hh: number, r: number | [number, number], d: number, w: number, nw: number, segs: number, mat: number, uvFlip = false, uvMap?: (u: number, v: number) => [number, number]) {
   const ol = outline(hw, hh, r, segs);
   const n = B.n(0, 0, nw);
-  const uvOf = (u: number, v: number): [number, number] => [uvFlip ? 0.5 - u / (2 * hw) : 0.5 + u / (2 * hw), 0.5 + v / (2 * hh)];
+  const uvOf = uvMap || ((u: number, v: number): [number, number] => [uvFlip ? 0.5 - u / (2 * hw) : 0.5 + u / (2 * hw), 0.5 + v / (2 * hh)]);
   const c = m.vert(B.p(0, 0, w), n, uvOf(0, 0));
   const first = m.pos.length / 3;
   for (const o of ol) {
@@ -161,7 +163,10 @@ export function buildBody(s: BodySpec, scale = 0.001) {
   }
   prof.push(...quarter(8, (p) => ({ d: sb + (s.backInset - sb) * (1 - Math.sin(p)), w: -T + f * (1 - Math.cos(p)) })).reverse());
   sweep(m, B, hw, hh, s.R, prof, 24, MAT.FRAME);
-  cap(m, B, hw, hh, s.R, s.backInset, -T, -1, 24, s.backMat === 'frame' ? MAT.FRAME : MAT.BACK);
+  // 背面贴实拍照片：机身背面上的点 (x, y)（从正面看的坐标）对应照片里的位置；从背面看左右相反
+  const crop = s.backTextureCrop;
+  const backUv = crop && ((x: number, y: number): [number, number] => [crop[0] + ((hw - x) / s.W) * (crop[2] - crop[0]), 1 - crop[3] + ((y + hh) / s.H) * (crop[3] - crop[1])]);
+  cap(m, B, hw, hh, s.R, s.backInset, -T, -1, 24, s.backMat === 'frame' ? MAT.FRAME : MAT.BACK, false, backUv);
 
   // 相机模组：金属围边 + 顶面（玻璃或与中框同材质）
   const I = s.island;
@@ -182,7 +187,7 @@ export function buildBody(s: BodySpec, scale = 0.001) {
     const ir: number | [number, number] = Array.isArray(I.r) ? [I.r[0] - I.rim, I.r[1] - I.rim] : I.r - I.rim;
     cap(m, IB, I.w / 2 - I.rim, I.h / 2 - I.rim, ir, 0, itop - 0.03, -1, 16, I.mat === 'frame' ? MAT.FRAME : MAT.ISLAND, true);
   } else {
-    cap(m, IB, I.w / 2, I.h / 2, I.r, ifl, itop, -1, 16, I.mat === 'frame' ? MAT.FRAME : MAT.ISLAND, true);
+    cap(m, IB, I.w / 2, I.h / 2, I.r, ifl, itop, -1, 16, I.mat === 'frame' ? MAT.FRAME : MAT.ISLAND, true, backUv && ((x, y) => backUv(x, iy + y)));
   }
 
   // 镜头：金属环 + 玻璃

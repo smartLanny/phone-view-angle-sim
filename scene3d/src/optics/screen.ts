@@ -24,7 +24,8 @@ const FS = /* glsl */ `
   uniform vec3 uEye;        // 眼睛位置（手机局部坐标，米）
   uniform vec2 uHalf;       // 显示区半宽 / 半高（米）
   uniform float uCorner;    // 显示区圆角
-  uniform vec3 uCut;        // 前摄开孔：中心距显示区顶边、胶囊直线段半长、半径
+  uniform vec3 uCut;        // 前摄开孔：中心距显示区顶边、胶囊直线段半长、半径（半径 0 = 没有）
+  uniform vec3 uHoles[3];   // 另外的圆形开孔：x（相对中线）、中心距显示区顶边、半径（半径 0 = 没有）
   uniform vec2 uImgScale;
   uniform int uMode;        // 0 实测效果  1 原图  2 离轴角分布
   uniform float uChroma;    // 色偏（色度偏离）的倍数，亮度不变；1 = 实测。双眼叠加时按双眼累加放大
@@ -87,9 +88,15 @@ const FS = /* glsl */ `
       }
       scr = lin2srgb(sim);
     }
-    vec2 q = pp - vec2(0.0, uHalf.y - uCut.x);
-    q.x = max(abs(q.x) - uCut.y, 0.0);
-    scr *= smoothstep(uCut.z, uCut.z + px, length(q));
+    if (uCut.z > 0.0) {
+      vec2 q = pp - vec2(0.0, uHalf.y - uCut.x);
+      q.x = max(abs(q.x) - uCut.y, 0.0);
+      scr *= smoothstep(uCut.z, uCut.z + px, length(q));
+    }
+    for (int i = 0; i < 3; i++) {
+      vec3 h = uHoles[i];
+      if (h.z > 0.0) scr *= smoothstep(h.z, h.z + px, length(pp - vec2(h.x, uHalf.y - h.y)));
+    }
 
     outColor = vec4(mix(vec3(0.004), scr, inside), 1.0);
   }`;
@@ -116,6 +123,7 @@ export function createScreenMaterial() {
       uHalf: { value: new THREE.Vector2(0.0366, 0.0796) },
       uCorner: { value: 0.01 },
       uCut: { value: new THREE.Vector3(0.0044, 0, 0.0016) },
+      uHoles: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
       uImgScale: { value: new THREE.Vector2(1, 1) },
       uMode: { value: 0 },
       uChroma: { value: 1 },

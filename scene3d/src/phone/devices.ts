@@ -17,7 +17,13 @@ export interface DeviceSpec {
   /** data.js 里对应的机型名前缀 */
   dataDevice: string;
   body: BodySpec;
-  screen: { diag: number; resW: number; resH: number; corner: number; cutout: { y: number; half: number; r: number } };
+  screen: {
+    diag: number; resW: number; resH: number; corner: number; cutout: { y: number; half: number; r: number };
+    /** 多个圆形开孔（最多 3 个）：[x（相对显示区中线）, 中心距显示区顶边, 半径]，mm */
+    holes?: [number, number, number][];
+  };
+  /** 背面实拍照片（相对网页的路径）；有它时背面和相机模组顶面贴照片，颜色只用于中框 */
+  backTexture?: string;
   colors: ColorWay[];
   rearDisplay: boolean;
   /** 中框 / 机身金属的质感（默认：抛光金属） */
@@ -103,4 +109,31 @@ export const IPHONE_18_PRO_MAX: DeviceSpec = {
   flash: '#e9e8e3',
 };
 
-export const DEVICES = [XIAOMI_18_PRO_MAX, IPHONE_18_PRO_MAX];
+export const HUAWEI_MATE_90_PRO_MAX: DeviceSpec = {
+  id: 'mate90pm',
+  name: '华为 Mate 90 Pro Max 典藏版',
+  dataDevice: '华为 Mate 90 Pro Max 典藏版',
+  body: {
+    // 与屏幕仿真页（web/devices.js）一致：按用户提供的正反面参考图估算比例，仅用于外观示意，不代表官方尺寸
+    W: 78.5, H: 163.0, T: 8.5, R: 12.5,
+    glassInset: 0.95, backInset: 0.8, fillet: 0.8, sideBulge: 0.08,
+    // 圆形相机模组（直径 52 mm），顶面贴照片里对应的那一块；镜头细节都在照片里
+    island: { w: 52, h: 52, top: 8.5, r: 26, depth: 2.1, mat: 'glass', rim: 0 },
+    lenses: [],
+    flats: [],
+    buttons: [[39, 18, 1], [64, 12, 1]],
+    buttonThick: 2.4, buttonOut: 0.45,
+    backTextureCrop: [0.107, 0.005, 0.893, 0.995],
+  },
+  // 6.9″ 1200 × 2600，前摄三个开孔
+  screen: { diag: 6.9, resW: 1200, resH: 2600, corner: 10.2, cutout: { y: 0, half: 0, r: 0 }, holes: [[-7.5, 4.6, 2.05], [0, 4.6, 2.15], [7.5, 4.6, 2.05]] },
+  backTexture: 'assets/huawei-mate90-pro-max-collector-back.png',
+  colors: [
+    // 屏幕仿真页的线性色值换成 sRGB：中框 [0.09, 0.15, 0.045]，背面 [0.42, 0.55, 0.24]（背面实际用照片）
+    { id: 'collector-green', name: '典藏绿', swatch: '#b6cc80', frame: '#556c3b', back: '#adc486', backRough: 0.52 },
+  ],
+  rearDisplay: false,
+  finish: { metalness: 0.85, roughness: 0.42, clearcoat: 0.15 },
+};
+
+export const DEVICES = [XIAOMI_18_PRO_MAX, IPHONE_18_PRO_MAX, HUAWEI_MATE_90_PRO_MAX];
