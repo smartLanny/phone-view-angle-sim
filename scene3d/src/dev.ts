@@ -16,8 +16,8 @@ const app = await mount(host, {
   privacy: q.get('privacy') === '1',
   device: q.get('device') || undefined,
   // 本机的苹果官网模型（public/local/，不进仓库）；没有就用参数化模型
-  appleIphone: q.get('apple') === '0' ? undefined : async (v) => {
-    const r = await fetch(`./local/phone_${v}.glb`);
+  appleIphone: q.get('apple') === '0' ? undefined : async (v, model) => {
+    const r = await fetch(model ? `./models/${model}.glb` : `./local/phone_${v}.glb`);
     return r.ok ? r.arrayBuffer() : null;
   },
   data,

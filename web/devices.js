@@ -74,5 +74,15 @@
         { id: 'collector-green', name: '典藏绿', swatch: '#b6cc80', frame: [0.09, 0.15, 0.045], back: [0.42, 0.55, 0.24] },
       ],
     },
+    'iPhone 17 Pro Max': {
+      model: 'iphone17pm',
+      body: { W: 78.0, H: 163.4, T: 8.75, R: 12.8, glassInset: 1.0 },
+      screen: { diag: 6.86, resW: 1320, resH: 2868, corner: 10.3, half: [36.34915948, 79.07397270] },
+      cutout: { y: 5.27134895, half: 7.34708011, r: 3.03609848 },
+      rough: 0.55,
+      colors: [
+        { id: 'orange', name: '宇宙橙', swatch: '#ed8b5b', frame: [0.933107, 0.192871, 0.064319], back: [0.748414, 0.163458, 0.0460524] },
+      ],
+    },
   };
 })(window);

@@ -10,6 +10,7 @@ declare global {
     ANG_DATA: MountOptions['data'];
     SCENE3D_PERSON: object;
     SCENE3D_IPHONE?: Record<string, string>;
+    Phone3D: { loadModel: (id: string) => Promise<ArrayBuffer> };
     Scene3D: { mount: (host: HTMLElement, extra?: Partial<MountOptions>) => ReturnType<typeof mount> };
   }
 }
@@ -18,7 +19,8 @@ declare global {
  * 苹果官网 AR 模型（本机）：web/local/iphone18pm-<颜色>.js，内容是 GLB 的 base64。
  * 这个目录不进公开仓库，线上找不到文件时返回 null，改用参数化模型。
  */
-function loadAppleIphone(variant: string): Promise<ArrayBuffer | null> {
+function loadAppleIphone(variant: string, model?: string): Promise<ArrayBuffer | null> {
+  if (model) return window.Phone3D.loadModel(model);
   const decode = (b64: string) => {
     const bin = atob(b64.slice(b64.indexOf(',') + 1));
     const u8 = new Uint8Array(bin.length);

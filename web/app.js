@@ -20,7 +20,7 @@
   const variant = (device, privacy) => PROFILES.find((p) => p.device === device && p.privacy === privacy);
   const hasPrivacy = (device) => !!variant(device, true) && !!variant(device, false);
   const pick = (device) => variant(device, false) || variant(device, true);
-  const shortName = (device) => device.split(' ')[0];
+  const shortName = (device) => device.match(/^iPhone \d+/)?.[0] || device.split(' ')[0];
   /** 图例用短名：“小米 · 防窥关闭”“iPhone GH3 · 未贴膜”。 */
   function shortLabel(p) {
     const k = specKey(p.device) || p.device, suffix = p.device.slice(k.length).trim();
@@ -114,10 +114,22 @@
   // ---------- 几何 ----------
   /** 每个机型的机身网格、屏幕尺寸与包围盒，按需构建并缓存。 */
   const devCache = {};
+  const pendingModels = new Set();
+  const failedModels = new Set();
   function dev(name) {
     if (devCache[name]) return devCache[name];
     const spec = specOf(name);
-    const phone = Phone3D.build(spec.body);
+    if (spec.model && !Phone3D.hasModel(spec.model) && !pendingModels.has(spec.model) && !failedModels.has(spec.model)) {
+      pendingModels.add(spec.model);
+      Phone3D.loadModel(spec.model).then(() => {
+        for (const key of Object.keys(devCache)) if (specOf(key).model === spec.model) delete devCache[key];
+        requestRender();
+      }).catch((err) => {
+        failedModels.add(spec.model);
+        toast(err.message);
+      }).finally(() => pendingModels.delete(spec.model));
+    }
+    const phone = Phone3D.build(spec.body, spec.model);
     const P = phone.spec, sc = spec.screen;
     const ratio = sc.resH / sc.resW;
     const w = (sc.diag * 25.4) / Math.sqrt(1 + ratio * ratio);
@@ -125,10 +137,17 @@
     for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const z of [0, -P.T]) corners.push([sx * P.W / 2, sy * P.H / 2, z]);
     return (devCache[name] = {
       name, spec, corners,
-      screenHalf: [w / 2, (w * ratio) / 2],
+      screenHalf: sc.half || [w / 2, (w * ratio) / 2],
       body: meshVAO(bodyProg, phone.body, true),
       screen: meshVAO(screenProg, phone.screen, false),
     });
+  }
+  function retryFailedModels() {
+    for (const name of activeDevices()) {
+      const model = specOf(name).model;
+      if (!failedModels.delete(model)) continue;
+      for (const key of Object.keys(devCache)) if (specOf(key).model === model) delete devCache[key];
+    }
   }
   const dispMM = (d) => {
     const [w, h] = d.screenHalf;
@@ -286,9 +305,13 @@
   in vec3 aNor;
   in float aMat;
   in vec2 aUv;
+  in vec3 aTint;
+  in vec2 aFinish;
   out vec3 vN;
   out vec3 vW;
   out vec2 vUv;
+  out vec3 vTint;
+  out vec2 vFinish;
   flat out int vMat;
   ${COMMON_VS}
   void main() {
@@ -296,6 +319,8 @@
     vN = uModel * aNor;
     vMat = int(aMat + 0.5);
     vUv = aUv;
+    vTint = aTint;
+    vFinish = aFinish;
     gl_Position = project(vW);
   }`;
 
@@ -304,6 +329,8 @@
   in vec3 vN;
   in vec3 vW;
   in vec2 vUv;
+  in vec3 vTint;
+  in vec2 vFinish;
   flat in int vMat;
   out vec4 outColor;
   uniform vec3 uEye;
@@ -311,6 +338,7 @@
   uniform float uRough;
   uniform sampler2D uBackTex;
   uniform bool uUseBackTex;
+  uniform bool uNative;
   ${COLOR_GLSL}
 
   // 摄影棚：上方大柔光箱 + 右侧灯条 + 左侧轮廓光，外加上亮下暗的环境渐变。
@@ -357,7 +385,13 @@
     vec3 R = reflect(-V, N);
     float nv = clamp(dot(N, V), 0.0, 1.0);
     vec3 col;
-    if (uUseBackTex && (vMat == 1 || vMat == 2)) {
+    if (uNative) {
+      vec3 base = vTint;
+      float metal = vFinish.x, rough = clamp(vFinish.y, 0.05, 1.0);
+      vec3 F0 = mix(vec3(0.04), base, metal), diff = base * (1.0 - metal);
+      col = lights(N, V, max(rough * rough, 0.04), F0, diff, 0.2)
+        + mix(F0, vec3(1.0), pow(1.0 - nv, 5.0)) * sky(R) * 0.7 + diff * sky(N) * 0.6;
+    } else if (uUseBackTex && (vMat == 1 || vMat == 2)) {
       vec4 photo = texture(uBackTex, vUv);
       vec3 base = srgb2lin(photo.rgb) * (0.92 + 0.08 * max(dot(N, normalize(vec3(-0.2, 0.7, 0.6))), 0.0));
       col = mix(uBack * 0.4, base, photo.a);
@@ -530,7 +564,10 @@
       gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
     };
     attr('aPos', mesh.pos, 3);
-    if (withNormals) { attr('aNor', mesh.nor, 3); attr('aMat', mesh.mat, 1); attr('aUv', mesh.uv, 2); }
+    if (withNormals) {
+      attr('aNor', mesh.nor, 3); attr('aMat', mesh.mat, 1); attr('aUv', mesh.uv, 2);
+      if (mesh.tint) { attr('aTint', mesh.tint, 3); attr('aFinish', mesh.finish, 2); }
+    }
     const ib = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(mesh.idx), gl.STATIC_DRAW);
@@ -699,6 +736,7 @@
       gl.uniform3fv(bodyProg.u.uFrame, c.frame);
       gl.uniform3fv(bodyProg.u.uBack, c.back);
       gl.uniform1f(bodyProg.u.uRough, v.dev.spec.rough ?? 0.55);
+      gl.uniform1i(bodyProg.u.uNative, !!v.dev.spec.model);
       const hasBackTexture = v.dev.spec.backTexture && bindBackTexture(v.dev.spec.backTexture);
       gl.uniform1i(bodyProg.u.uUseBackTex, hasBackTexture ? 1 : 0);
       gl.bindVertexArray(v.dev.body.vao);
@@ -1201,6 +1239,7 @@
     const b = e.target.closest('.dev-card');
     if (!b) return;
     S.device = b.dataset.d;
+    retryFailedModels();
     syncProfileUI();
     requestRender();
   });
@@ -1227,6 +1266,7 @@
     const b = e.target.closest('button');
     if (!b) return;
     S.slots = PRESETS[+b.dataset.i].slots.slice();
+    retryFailedModels();
     syncProfileUI();
     requestRender();
   });
@@ -1257,10 +1297,10 @@
   [0, 1].forEach((i) => {
     const sel = $('slot' + i);
     sel.innerHTML = options;
-    sel.addEventListener('change', () => { S.slots[i] = sel.value; syncProfileUI(); requestRender(); });
+    sel.addEventListener('change', () => { S.slots[i] = sel.value; retryFailedModels(); syncProfileUI(); requestRender(); });
   });
   $('privacy').addEventListener('change', (e) => { S.privacy = e.target.checked; syncProfileUI(); requestRender(); });
-  bindSeg('compare', (v) => { S.compare = v === '1'; S.stereo = v === '2'; syncProfileUI(); requestRender(); });
+  bindSeg('compare', (v) => { S.compare = v === '1'; S.stereo = v === '2'; retryFailedModels(); syncProfileUI(); requestRender(); });
   bindSeg('stereoView', (v) => { S.cross = v === '1'; requestRender(); });
   $('size').addEventListener('input', (e) => { S.size = e.target.value / 100; $('sizeV').textContent = e.target.value + '%'; requestRender(); });
   $('gap').addEventListener('input', (e) => { S.gap = +e.target.value; $('gapV').textContent = S.gap + ' px'; requestRender(); });
@@ -1356,7 +1396,7 @@
 
   // ---------- 模式：屏幕仿真（默认，本页原有工具）/ 场景演示（三维，scene3d.js，做动画用，从“画面 → 更多”进入） ----------
   let appMode = 'sim', scene3d = null, scene3dLoading = null;
-  const S3D_VER = 6;
+  const S3D_VER = 7;
   const loadScript = (src) => new Promise((res, rej) => {
     const s = document.createElement('script');
     s.src = src; s.onload = res; s.onerror = () => rej(new Error('无法加载 ' + src));
@@ -1375,7 +1415,7 @@
       else if (!scene3dLoading) {
         $('scene3d').classList.add('loading');
         // 加载失败（或浏览器不支持 WebGL2）时退回屏幕仿真
-        scene3dLoading = loadScene3D().then(() => window.Scene3D.mount($('scene3d')))
+        scene3dLoading = loadScene3D().then(() => window.Scene3D.mount($('scene3d'), { device: specOf(S.device).model }))
           .then((a) => { scene3d = a; window.scene3d = a; $('scene3d').classList.remove('loading'); })
           .catch((err) => { console.error(err); scene3dLoading = null; $('scene3d').classList.remove('loading'); toast('三维场景加载失败，已切回屏幕仿真'); setAppMode('sim'); });
       }

@@ -17,6 +17,35 @@ export const APPLE_VARIANT: Record<string, string> = { burgundy: 'Burgundy', gla
 export async function buildApplePhone(spec: DeviceSpec, glb: ArrayBuffer): Promise<PhoneModel> {
   const gltf = await new GLTFLoader().parseAsync(glb, '');
   const src = gltf.scene;
+  if (spec.model) {
+    src.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    const scr = createScreenMaterial(), sc = spec.screen;
+    const half = new THREE.Vector2(...sc.half!).multiplyScalar(0.001);
+    scr.uniforms.uHalf.value.copy(half);
+    scr.uniforms.uCorner.value = sc.corner / 1000;
+    scr.uniforms.uCut.value.set(sc.cutout.y / 1000, sc.cutout.half / 1000, sc.cutout.r / 1000);
+    const screen = new THREE.Mesh(buildScreenGeometry(spec.body), scr);
+    screen.position.z = 0.00002;
+    screen.name = 'screen';
+    const group = new THREE.Group();
+    group.name = 'phone:' + spec.id;
+    group.add(src, screen);
+    return {
+      group, screen, spec, half, source: 'apple', setColor() {},
+      dispose() {
+        src.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (!m.isMesh) return;
+          m.geometry.dispose();
+          for (const mat of ([] as THREE.Material[]).concat(m.material)) {
+            for (const v of Object.values(mat)) if (v && (v as THREE.Texture).isTexture) (v as THREE.Texture).dispose();
+            mat.dispose();
+          }
+        });
+        screen.geometry.dispose(); scr.dispose();
+      },
+    };
+  }
   src.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(src);
   const meshes: THREE.Mesh[] = [];

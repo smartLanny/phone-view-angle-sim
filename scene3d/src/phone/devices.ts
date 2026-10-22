@@ -16,9 +16,11 @@ export interface DeviceSpec {
   name: string;
   /** data.js 里对应的机型名前缀 */
   dataDevice: string;
+  model?: string;
   body: BodySpec;
   screen: {
     diag: number; resW: number; resH: number; corner: number; cutout: { y: number; half: number; r: number };
+    half?: [number, number];
     /** 多个圆形开孔（最多 3 个）：[x（相对显示区中线）, 中心距显示区顶边, 半径]，mm */
     holes?: [number, number, number][];
   };
@@ -136,4 +138,21 @@ export const HUAWEI_MATE_90_PRO_MAX: DeviceSpec = {
   finish: { metalness: 0.85, roughness: 0.42, clearcoat: 0.15 },
 };
 
-export const DEVICES = [XIAOMI_18_PRO_MAX, IPHONE_18_PRO_MAX, HUAWEI_MATE_90_PRO_MAX];
+export const IPHONE_17_PRO_MAX: DeviceSpec = {
+  id: 'iphone17pm',
+  name: 'iPhone 17 Pro Max',
+  dataDevice: 'iPhone 17 Pro Max',
+  model: 'iphone17pm',
+  body: { ...IPHONE_18_PRO_MAX.body },
+  screen: {
+    diag: 6.86, resW: 1320, resH: 2868, corner: 10.3,
+    half: [36.34915948, 79.07397270],
+    cutout: { y: 5.27134895, half: 7.34708011, r: 3.03609848 },
+  },
+  colors: [
+    { id: 'orange', name: '宇宙橙', swatch: '#ed8b5b', frame: '#ed8b5b', back: '#df7648', backRough: 0.55 },
+  ],
+  rearDisplay: false,
+};
+
+export const DEVICES = [XIAOMI_18_PRO_MAX, IPHONE_18_PRO_MAX, HUAWEI_MATE_90_PRO_MAX, IPHONE_17_PRO_MAX];

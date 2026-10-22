@@ -28,6 +28,12 @@ PROFILE_IDS = {
     ("小米 18 Pro Max", False): "p2",
     ("小米 18 Pro Max", True): "p3",
     ("华为 Mate 90 Pro Max 典藏版", False): "p4",
+    ("iPhone 17 Pro Max GV3", False): "p5",
+}
+VAM_SOURCES = {
+    "iPhone 17 Pro Max GV3/iPhone 17 ProMax.json": {
+        "device": "iPhone 17 Pro Max GV3", "azimuth_rotation": 180,
+    },
 }
 
 
@@ -91,15 +97,36 @@ def load(path):
     }
 
 
+def load_vam(path, device, azimuth_rotation):
+    with open(path, encoding="utf-8") as f:
+        source = json.load(f)
+    if source["schema"] != "vam-result/1" or source["status"] != "done":
+        raise ValueError(f"{path}: 需要已完成的 vam-result/1 测量")
+    theta = source["grid"]["th"]
+    if theta[0] != 0:
+        raise ValueError(f"{path}: 缺少 0° 测量")
+    rows = {(az + azimuth_rotation) % 360: i for i, az in enumerate(source["grid"]["az"])}
+    angles = [-t for t in reversed(theta[1:])] + theta
+    sets = []
+    for phi in sorted(az for az in rows if az < 180):
+        positive, negative = rows[phi], rows[phi + 180]
+        data = {}
+        for primary in PRIMARY_KEYS.values():
+            values = source["xyz"][primary]
+            data[primary] = list(reversed(values[negative][1:])) + values[positive]
+        sets.append({
+            "name": f"{device} {phi}°", "file": str(path), "phi": phi,
+            "angles": angles, "data": data,
+        })
+    return sets
+
+
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     src = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(here)
     out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(here), "web", "data.js")
 
     files = sorted(glob.glob(os.path.join(src, "**", "*.ang2"), recursive=True))
-    if not files:
-        sys.exit(f"{src} 下没有 .ang2 文件")
-
     groups = {}
     for p in files:
         s = load(p)
@@ -114,6 +141,16 @@ def main():
         if suffix and suffix not in key:
             key = f"{key} {suffix}"
         groups.setdefault(key, []).append(s)
+
+    for relative, config in VAM_SOURCES.items():
+        path = os.path.join(src, relative)
+        if os.path.isfile(path):
+            sets = load_vam(path, **config)
+            for s in sets:
+                s["file"] = relative
+            groups.setdefault(config["device"], []).extend(sets)
+    if not groups:
+        sys.exit(f"{src} 下没有可视角测量文件")
 
     angles = None
     profiles = []

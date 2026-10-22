@@ -33,8 +33,7 @@ export interface MountOptions {
   pattern?: string;
   privacy?: boolean;
   device?: string;      // 'xiaomi18pm' | 'iphone18pm'
-  /** 取苹果官网 AR 模型（按颜色变体名）。只在本机提供，拿不到时用参数化模型 */
-  appleIphone?: (variant: string) => Promise<ArrayBuffer | null>;
+  appleIphone?: (variant: string, model?: string) => Promise<ArrayBuffer | null>;
 }
 
 type Viewer = 'you' | 'nb';
@@ -163,6 +162,11 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   /** 建手机模型：iPhone 优先用苹果官网模型（本机有的话），否则参数化建模 */
   const makePhone = async (d: DeviceSpec): Promise<PhoneModel> => {
     const color = colorOf[d.id] || d.colors[0].id;
+    if (d.model) {
+      const buf = await opts.appleIphone?.(color, d.model);
+      if (buf) return buildApplePhone(d, buf);
+      throw new Error('机身模型加载失败');
+    }
     if (d.id === 'iphone18pm' && opts.appleIphone && APPLE_VARIANT[color]) {
       try {
         const buf = await opts.appleIphone(APPLE_VARIANT[color]);
@@ -261,7 +265,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       <div class="s3d-seg" data-k="views"></div>
       <div class="s3d-axis" title="讲解视角里的视线和读数标在屏幕上下（顶 / 中 / 底）还是左右（左 / 中 / 右）（A）"><span>视线</span><div class="s3d-seg" data-k="axis"><button data-v="v">上下</button><button data-v="h">左右</button></div></div>
       <span class="s3d-div"></span>
-      <div class="s3d-seg" data-k="devices">${DEVICES.map((d) => `<button data-v="${d.id}" title="${d.name}">${d.name.split(' ')[0]}</button>`).join('')}</div>
+      <div class="s3d-seg" data-k="devices">${DEVICES.map((d) => `<button data-v="${d.id}" title="${d.name}">${d.name.match(/^iPhone \d+/)?.[0] || d.name.split(' ')[0]}</button>`).join('')}</div>
       <label class="s3d-toggle" data-k="privacyRow"><input type="checkbox" data-k="privacy"><span class="s3d-sw"></span><span data-k="privacyLabel">防窥</span></label>
       <label class="s3d-select"><span>屏幕</span><select data-k="pattern">${PATTERNS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
       <button class="s3d-btn" data-k="adjustBtn" aria-expanded="false">调整</button>
@@ -478,7 +482,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const sw = device.colors.map((c) => `<button class="s3d-sw-btn${c.id === cur ? ' on' : ''}" data-color="${c.id}" title="${c.name}" style="--c:${c.swatch}"></button>`).join('');
     box.innerHTML = `<div class="s3d-adjust-h">调整 · ${preset.name}</div>${rows}<div class="s3d-derived" data-k="derived"></div>
       <div class="s3d-row"><span>机身颜色 · ${device.name}</span></div><div class="s3d-swatches">${sw}</div>
-      <div class="s3d-derived">外观：${phone.source === 'apple' ? '苹果官网 AR 模型（iPhone 18 Pro 等比放大，仅本机）' : '按官方尺寸参数化建模'}</div>
+      ${device.model ? '' : `<div class="s3d-derived">外观：${phone.source === 'apple' ? '苹果官网 AR 模型（iPhone 18 Pro 等比放大，仅本机）' : '按官方尺寸参数化建模'}</div>`}
       <label class="s3d-row"><span>播放时每个画面停留</span><b data-out="hold">${hold} 秒</b></label>
       <input type="range" data-ui="hold" min="1" max="8" step="0.5" value="${hold}">
       <label class="s3d-row"><span>界面与标注大小</span><b data-out="uiScale">${Math.round(userScale * 100)}%</b></label>
@@ -589,7 +593,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   let loading = 0;
   const swapPhone = async (d: DeviceSpec) => {
     const my = ++loading;
-    if (d.id === 'iphone18pm' && opts.appleIphone) $('warn').textContent = '正在加载 iPhone 模型…';
+    if ((d.model || d.id === 'iphone18pm') && opts.appleIphone) $('warn').textContent = '正在加载 iPhone 模型…';
     const next = await makePhone(d);
     if (my !== loading) { next.dispose(); return false; }   // 期间又切了别的，丢掉
     scene.remove(phone.group);

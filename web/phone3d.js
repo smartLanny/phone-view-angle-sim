@@ -102,7 +102,53 @@
     return out;
   }
 
-  function build(overrides) {
+  const modelLoads = {};
+  const modelBuffers = {};
+  function loadModel(id) {
+    if (modelLoads[id]) return modelLoads[id];
+    const decode = () => {
+      const bin = atob(root.PHONE_ASSETS[id]);
+      const data = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) data[i] = bin.charCodeAt(i);
+      return (modelBuffers[id] = data.buffer);
+    };
+    return (modelLoads[id] = root.PHONE_ASSETS?.[id] ? Promise.resolve(decode()) : new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = `assets/${id}.js`;
+      script.onload = () => resolve(decode());
+      script.onerror = () => { delete modelLoads[id]; reject(new Error('机身模型加载失败')); };
+      document.head.appendChild(script);
+    }));
+  }
+
+  function modelMesh(buffer) {
+    const data = new DataView(buffer), length = data.getUint32(12, true);
+    const json = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 20, length)));
+    const binary = 28 + length;
+    const body = new Mesh();
+    body.tint = []; body.finish = [];
+    const read = (id) => {
+      const a = json.accessors[id], view = json.bufferViews[a.bufferView];
+      const size = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[a.type];
+      const T = { 5121: Uint8Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array }[a.componentType];
+      return new T(buffer, binary + (view.byteOffset || 0) + (a.byteOffset || 0), a.count * size);
+    };
+    for (const mesh of json.meshes) for (const primitive of mesh.primitives) {
+      const pos = read(primitive.attributes.POSITION), nor = read(primitive.attributes.NORMAL);
+      const indices = read(primitive.indices), base = body.pos.length / 3;
+      const mat = json.materials[primitive.material], pbr = mat.pbrMetallicRoughness || {};
+      const tint = pbr.baseColorFactor || [1, 1, 1, 1];
+      for (let i = 0; i < pos.length; i += 3) {
+        body.vert([pos[i] * 1000, pos[i + 1] * 1000, pos[i + 2] * 1000], [nor[i], nor[i + 1], nor[i + 2]], 0);
+        body.tint.push(...tint.slice(0, 3));
+        body.finish.push(pbr.metallicFactor ?? 1, pbr.roughnessFactor ?? 1);
+      }
+      for (const index of indices) body.idx.push(base + index);
+    }
+    return body;
+  }
+
+  function build(overrides, model) {
     const s = Object.assign({}, SPEC, overrides || {});
     const hw = s.W / 2, hh = s.H / 2, T = s.T, f = s.fillet, sb = s.sideBulge;
     const body = new Mesh(), screen = new Mesh();
@@ -161,8 +207,9 @@
     }
 
     cap(screen, B, hw, hh, s.R, s.glassInset, 0, 1, 24, 0);
-    return { body, screen, spec: s };
+    if (model) for (let i = 2; i < screen.pos.length; i += 3) screen.pos[i] = 0.02;
+    return { body: model ? (modelBuffers[model] ? modelMesh(modelBuffers[model]) : new Mesh()) : body, screen, spec: s };
   }
 
-  root.Phone3D = { build, SPEC, MAT };
+  root.Phone3D = { build, SPEC, MAT, loadModel, hasModel: (id) => !!modelBuffers[id] };
 })(window);
