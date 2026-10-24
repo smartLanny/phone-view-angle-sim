@@ -13,6 +13,8 @@ import { buildPhone, type PhoneModel } from './phone/model';
 import { DEVICES, type DeviceSpec } from './phone/devices';
 import { islandCenterY, rearBump } from './phone/geometry';
 import { buildApplePhone, APPLE_VARIANT } from './phone/apple';
+import { buildDuoPhone, type DuoData, type DuoSurface } from './phone/duo';
+import { duoGrip } from './phone/grip';
 import { createDataPanel, type PanelProfile } from './datapanel';
 import { createModel, anglesOf, deltaE2000, xyzToLab, type AngData, type AngleModel, type Profile } from './optics/model';
 import { lutTexture } from './optics/screen';
@@ -34,6 +36,9 @@ export interface MountOptions {
   privacy?: boolean;
   device?: string;      // 'xiaomi18pm' | 'iphone18pm'
   appleIphone?: (variant: string, model?: string) => Promise<ArrayBuffer | null>;
+  duoData?:DuoData;
+  fold?:number;
+  duoSurface?:DuoSurface;
 }
 
 type Viewer = 'you' | 'nb';
@@ -158,13 +163,14 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
 
   // ---------- 手机与实测模型 ----------
   let device: DeviceSpec = DEVICES.find((d) => d.id === opts.device) || DEVICES[0];
+  let fold=opts.fold??180,duoSurface:DuoSurface=opts.duoSurface||'inner',displayMode=0;
   const colorOf: Record<string, string> = {};
   /** 建手机模型：iPhone 优先用苹果官网模型（本机有的话），否则参数化建模 */
   const makePhone = async (d: DeviceSpec): Promise<PhoneModel> => {
     const color = colorOf[d.id] || d.colors[0].id;
     if (d.model) {
       const buf = await opts.appleIphone?.(color, d.model);
-      if (buf) return buildApplePhone(d, buf);
+      if (buf) return d.foldable?buildDuoPhone(d,buf,fold,duoSurface):buildApplePhone(d, buf);
       throw new Error('机身模型加载失败');
     }
     if (d.id === 'iphone18pm' && opts.appleIphone && APPLE_VARIANT[color]) {
@@ -181,6 +187,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const dimsOf = (d: DeviceSpec) => ({
     W: d.body.W / 1000, H: d.body.H / 1000, T: d.body.T / 1000,
     bump: rearBump(d.body) / 1000, islandY: islandCenterY(d.body) / 1000,
+    grip: d.foldable ? duoGrip(fold,duoSurface) : undefined,
   });
   const ctx: Ctx = { you, nb, dims: dimsOf(device) };
 
@@ -190,8 +197,10 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const hasPrivacy = () => profilesOf(device).some((p) => p.privacy) && profilesOf(device).some((p) => !p.privacy);
   const privacyKind = () => profilesOf(device).find((p) => p.privacy)?.privacyKind || 'mode';
   let privacy = !!opts.privacy;
-  let model!: AngleModel;
-  let profile!: Profile;
+  let model:AngleModel|null=null;
+  let profile:Profile|null=null;
+  const phoneScreens=()=>phone.screens||[{key:'main',screen:phone.screen,half:phone.half,spec:device.screen}];
+  const profileFor=(key:string)=>device.foldable?(opts.duoData?.[key as DuoSurface]||null):profile;
   const modelOf = (p: Profile) => {
     let m = models.get(p.id);
     if (!m) { const mm = createModel({ angles: opts.data.angles, sets: p.sets }); m = { model: mm, lut: lutTexture(mm) }; models.set(p.id, m); }
@@ -199,11 +208,14 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   };
   const useProfile = () => {
     const ps = profilesOf(device);
-    profile = ps.find((q) => q.privacy === (privacy && hasPrivacy())) || ps[0] || opts.data.profiles[0];
-    const m = modelOf(profile);
-    phone.screen.material.uniforms.uLut.value = m.lut.tex;
-    phone.screen.material.uniforms.uLutW.value = m.lut.width;
-    model = m.model;
+    profile = device.foldable?(opts.duoData?.[duoSurface]||null):(ps.find((q) => q.privacy === (privacy && hasPrivacy())) || ps[0] || null);
+    model=profile?.sets?.length?modelOf(profile).model:null;
+    for(const item of phoneScreens()){
+      const p=profileFor(item.key),m=p?.sets?.length?modelOf(p):null,u=item.screen.material.uniforms;
+      u.uHasData.value=!!m;u.uLut.value=m?.lut.tex||null;u.uLutW.value=m?.lut.width||71;u.uMode.value=displayMode;
+      item.screen.material.userData.profile=p;
+      item.screen.material.userData.reflection=device.foldable?opts.duoData?.reflection?.[item.key as DuoSurface]||null:null;
+    }
   };
   useProfile();
   /** 全部数据的最大色偏（粗扫），固定色偏量程，切换机型 / 防窥时刻度不跳 */
@@ -218,20 +230,15 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
 
   // 屏幕画面（按机型分辨率生成，铺满宽度不拉伸）
   let patternName = opts.pattern || 'ui';
-  let imgTex: THREE.Texture | null = null;
+  const imgTextures:THREE.Texture[]=[];
   const setPattern = (name: string | HTMLCanvasElement) => {
-    const sc = device.screen;
-    const cv = typeof name === 'string' ? opts.makePattern(name, sc.resW, sc.resH) : name;
     if (typeof name === 'string') patternName = name;
-    imgTex?.dispose();
-    imgTex = new THREE.CanvasTexture(cv);           // 先画到 canvas 再做纹理，避免 ImageBitmap 不支持 flipY 导致上下颠倒
-    imgTex.colorSpace = THREE.NoColorSpace;        // 着色器里自己做 sRGB → 线性
-    imgTex.anisotropy = 8;
-    imgTex.minFilter = THREE.LinearMipmapLinearFilter;
-    const u = phone.screen.material.uniforms;
-    u.uImg.value = imgTex;
-    const da = sc.resW / sc.resH, ia = cv.width / cv.height;
-    u.uImgScale.value.set(ia > da ? da / ia : 1, ia > da ? 1 : ia / da);
+    imgTextures.splice(0).forEach(t=>t.dispose());
+    for(const item of phoneScreens()){
+      const sc=item.spec,cv=typeof name==='string'?opts.makePattern(name,sc.resW,sc.resH):name;
+      const tex=new THREE.CanvasTexture(cv);tex.colorSpace=THREE.NoColorSpace;tex.anisotropy=8;tex.minFilter=THREE.LinearMipmapLinearFilter;imgTextures.push(tex);
+      const u=item.screen.material.uniforms;u.uImg.value=tex;const da=sc.resW/sc.resH,ia=cv.width/cv.height;u.uImgScale.value.set(ia>da?da/ia:1,ia>da?1:ia/da);
+    }
   };
   setPattern(patternName);
 
@@ -265,9 +272,10 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       <div class="s3d-seg" data-k="views"></div>
       <div class="s3d-axis" title="讲解视角里的视线和读数标在屏幕上下（顶 / 中 / 底）还是左右（左 / 中 / 右）（A）"><span>视线</span><div class="s3d-seg" data-k="axis"><button data-v="v">上下</button><button data-v="h">左右</button></div></div>
       <span class="s3d-div"></span>
-      <div class="s3d-seg" data-k="devices">${DEVICES.map((d) => `<button data-v="${d.id}" title="${d.name}">${d.name.match(/^iPhone \d+/)?.[0] || d.name.split(' ')[0]}</button>`).join('')}</div>
+      <div class="s3d-seg" data-k="devices">${DEVICES.map((d) => `<button data-v="${d.id}" title="${d.name}">${d.foldable?'Duo':d.name.match(/^iPhone \d+/)?.[0] || d.name.split(' ')[0]}</button>`).join('')}</div>
       <label class="s3d-toggle" data-k="privacyRow"><input type="checkbox" data-k="privacy"><span class="s3d-sw"></span><span data-k="privacyLabel">防窥</span></label>
       <label class="s3d-select"><span>屏幕</span><select data-k="pattern">${PATTERNS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
+      <label class="s3d-select"><span>显示</span><select data-k="display"><option value="0">仿真效果</option><option value="1">原图</option><option value="2">离轴角分布</option></select></label>
       <button class="s3d-btn" data-k="adjustBtn" aria-expanded="false">调整</button>
       <button class="s3d-btn" data-k="dataBtn" aria-expanded="false">数据</button>
       <span class="s3d-div"></span>
@@ -279,6 +287,8 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const $ = (k: string) => ui.querySelector(`[data-k="${k}"]`) as HTMLElement;
   ($('pattern') as HTMLSelectElement).value = patternName;
   $('pattern').addEventListener('change', (e) => setPattern((e.target as HTMLSelectElement).value));
+  function setDisplayMode(mode:number){displayMode=mode;($('display') as HTMLSelectElement).value=String(mode);for(const item of phoneScreens())item.screen.material.uniforms.uMode.value=mode;}
+  $('display').addEventListener('change',e=>setDisplayMode(+(e.target as HTMLSelectElement).value));
   const privEl = ui.querySelector('[data-k="privacy"]') as HTMLInputElement;
   privEl.addEventListener('change', () => { privacy = privEl.checked; useProfile(); });
   /** 工具栏一行放不下时排成两行（第一行场景，第二行其他）；多出来的高度让上方的面板、小窗、标注往上让 */
@@ -321,7 +331,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     fitBar();          // 防窥开关随机型显示 / 隐藏
   };
   syncDeviceUI();
-  const data = createDataPanel(ui, model.thetaMax);
+  const data = createDataPanel(ui, Math.max(...opts.data.angles.map(Math.abs)));
 
   // ---------- 场景状态与过渡 ----------
   type Snap = { you: PoseSnap; nb: PoseSnap | null; phone: THREE.Matrix4; props: Props; nbAlpha: number; lie: number; cam: { pos: THREE.Vector3; target: THREE.Vector3 } };
@@ -481,6 +491,8 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const cur = colorOf[device.id] || device.colors[0].id;
     const sw = device.colors.map((c) => `<button class="s3d-sw-btn${c.id === cur ? ' on' : ''}" data-color="${c.id}" title="${c.name}" style="--c:${c.swatch}"></button>`).join('');
     box.innerHTML = `<div class="s3d-adjust-h">调整 · ${preset.name}</div>${rows}<div class="s3d-derived" data-k="derived"></div>
+      ${device.foldable?`<div class="s3d-row"><span>观察屏幕</span></div><div class="s3d-seg"><button data-surface="inner" class="${duoSurface==='inner'?'on':''}">内屏</button><button data-surface="outer" class="${duoSurface==='outer'?'on':''}">外屏</button></div>
+      <label class="s3d-row"><span>折叠角度</span><b data-out="fold">${fold}°</b></label><input type="range" data-ui="fold" min="0" max="180" step="1" value="${fold}"><div class="s3d-seg"><button data-fold="0">闭合</button><button data-fold="90">半开</button><button data-fold="180">展开</button></div>`:''}
       <div class="s3d-row"><span>机身颜色 · ${device.name}</span></div><div class="s3d-swatches">${sw}</div>
       ${device.model ? '' : `<div class="s3d-derived">外观：${phone.source === 'apple' ? '苹果官网 AR 模型（iPhone 18 Pro 等比放大，仅本机）' : '按官方尺寸参数化建模'}</div>`}
       <label class="s3d-row"><span>播放时每个画面停留</span><b data-out="hold">${hold} 秒</b></label>
@@ -504,10 +516,25 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const d = state.derived;
     el.textContent = preset.id === 'desk' && d.dist ? `观看距离 ${d.dist.toFixed(0)} cm · 眼睛高出屏幕 ${d.height.toFixed(0)} cm` : '';
   }
+  function setFold(value:number) {
+    fold=THREE.MathUtils.clamp(value,0,180);phone.setFold?.(fold,duoSurface);
+    ctx.dims=dimsOf(device);
+    const output=ui.querySelector('[data-out="fold"]'),input=ui.querySelector('[data-ui="fold"]') as HTMLInputElement|null;
+    if(output)output.textContent=fold+'°';if(input)input.value=String(fold);
+    if(trans)trans.b=buildState(preset);
+    else if(state)applySteady(buildState(preset),false);
+  }
+  function setDuoSurface(surface:DuoSurface) {
+    duoSurface=surface;phone.setFold?.(fold,surface);ctx.dims=dimsOf(device);useProfile();renderAdjust();
+    if(!model&&stereo.active)stereo.stop(false);
+    if(trans)trans.b=buildState(preset);
+    else if(state)applySteady(buildState(preset),false);
+  }
   $('adjust').addEventListener('input', (e) => {
     const t = e.target as HTMLInputElement;
     if (t.dataset.ui === 'scale') { setUserScale(+t.value / 100); return; }
     if (t.dataset.ui === 'hold') { hold = +t.value; saveJSON(HOLD_KEY, hold); (ui.querySelector('[data-out="hold"]') as HTMLElement).textContent = `${hold} 秒`; return; }
+    if(t.dataset.ui==='fold'){setFold(+t.value);return;}
     if (!t.dataset.p) return;
     params[preset.id][t.dataset.p] = +t.value;
     const def = preset.params.find((d) => d.key === t.dataset.p)!;
@@ -518,6 +545,10 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     updateDerived();
   });
   $('adjust').addEventListener('click', (e) => {
+    const folding=(e.target as HTMLElement).closest('[data-fold]') as HTMLElement|null;
+    if(folding){setFold(+folding.dataset.fold!);return;}
+    const surface=(e.target as HTMLElement).closest('[data-surface]') as HTMLElement|null;
+    if(surface){setDuoSurface(surface.dataset.surface as DuoSurface);return;}
     const cb = (e.target as HTMLElement).closest('[data-color]') as HTMLElement | null;
     if (cb) {
       colorOf[device.id] = cb.dataset.color!;
@@ -558,6 +589,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const setViewer = (v: Viewer) => { viewer = v; describe(); };
   const pickView = (v: string) => {
     if (v === 'stereo') {                 // 双眼视差：先到人眼视角（镜头到位后从整体画面开始分开）
+      if(!model){toast('该屏测量数据待补充，暂不能计算双眼色差');return;}
       if (!stereo.active || stereo.leaving) { if (rig.mode !== 'eye') setView('eye'); stereo.start(); }
       return;
     }
@@ -605,6 +637,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     scene.add(phone.group);
     ctx.dims = dimsOf(device);
     useProfile();
+    if(!model&&stereo.active)stereo.stop(false);
     setPattern(patternName);             // 按新机型分辨率重新生成画面
     syncDeviceUI();
     renderAdjust();
@@ -837,6 +870,13 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   void document.fonts?.ready.then(() => fitBar());   // 字体加载完宽度会变，再量一次工具栏
 
   const inv = new THREE.Matrix4();
+  const setScreenEye=(eye:THREE.Vector3,chroma=1)=>{const local=eye.clone().applyMatrix4(inv);for(const item of phoneScreens()){const u=item.screen.material.uniforms;u.uEye.value.copy(local);u.uChroma.value=chroma;}};
+  const screenAngles=(eye:THREE.Vector3)=>{
+    const local=eye.clone().applyMatrix4(inv),f=phone.surfaceFrame?.(duoSurface,.5,.5);
+    if(!f)return anglesOf(local);
+    const d=local.sub(new THREE.Vector3(...f.point as [number,number,number])),N=new THREE.Vector3(...f.normal as [number,number,number]),T=new THREE.Vector3(...f.tangentU as [number,number,number]),B=new THREE.Vector3(...f.tangentV as [number,number,number]);
+    return anglesOf(new THREE.Vector3(d.dot(T),d.dot(B),d.dot(N)));
+  };
   const tmpQ = new THREE.Quaternion();
   let frames = 0;
   let readyResolve!: () => void;
@@ -920,27 +960,24 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const camFade = rig.update(now, mainEye, mainEye.clone().add(camFwd), camUp);
 
     inv.copy(phoneM).invert();
-    const u = phone.screen.material.uniforms;
-    u.uEye.value.copy(mainEye).applyMatrix4(inv);
+    setScreenEye(mainEye);
     rig.camera.updateMatrixWorld();
     lookYou.setFade(figFade * reachFade);
     lookNb.setFade(figFade * nbAlpha);
     lookNb.setDepth(nbAlpha);
-    const stereoOn = stereo.active && rig.progress >= 1;
+    const stereoOn = stereo.active && !!model && rig.progress >= 1;
     let covered = false;
-    if (stereoOn) {
+    if (stereoOn && model) {
       covered = stereo.render(now, {
-        renderer, W, H, k: uiK, bottomExtra: barExtra, baseFov: rig.camera.fov, baseQuat: rig.camera.quaternion.clone(), eye: mainEye, screen: scr, up: camUp, phoneInv: inv, model, fitFov,
+        renderer, W, H, k: uiK, bottomExtra: barExtra, baseFov: rig.camera.fov, baseQuat: rig.camera.quaternion.clone(), eye: mainEye, screen: scr, up: camUp, anglesAt: screenAngles, model, fitFov,
         renderEye: (ey, cam, chroma) => {
-          u.uEye.value.copy(ey).applyMatrix4(inv);
-          u.uChroma.value = chroma;
+          setScreenEye(ey,chroma);
           lookYou.setHead(headOf(you, eyeYou), cam, mainViewer === 'you' ? 1 : 0);
           if (eyeNb) lookNb.setHead(headOf(nb, eyeNb), cam, mainViewer === 'nb' ? 1 : 0);
           renderer.render(scene, cam);
         },
       });
-      u.uEye.value.copy(mainEye).applyMatrix4(inv);
-      u.uChroma.value = 1;
+      setScreenEye(mainEye);
     }
     // 右侧两个小窗：地铁场景是旁人看到的 / 你看到的，侧卧是右眼（上）/ 左眼（下）看到的。
     // 各渲染一次（先画到画布左下角再拷到小窗自己的画布，之后主画面会把那一块盖掉）
@@ -969,7 +1006,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
         insetCam.fov = fitFov(eyeP, 0.8);
         insetCam.updateProjectionMatrix();
         insetCam.updateMatrixWorld();
-        u.uEye.value.copy(eyeP).applyMatrix4(inv);
+        setScreenEye(eyeP);
         lookYou.setHead(headOf(you, eyeYou), insetCam, v.hide === 'you' ? 1 : 0);
         if (eyeNb) lookNb.setHead(headOf(nb, eyeNb), insetCam, v.hide === 'nb' ? 1 : 0);
         renderer.setScissorTest(true);
@@ -982,19 +1019,18 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
         renderer.setViewport(0, 0, W, H);
         if (it.cv.width !== iwPx || it.cv.height !== ihPx) { it.cv.width = iwPx; it.cv.height = ihPx; }
         it.g.drawImage(renderer.domElement, 0, renderer.domElement.height - ihPx, iwPx, ihPx, 0, 0, iwPx, ihPx);
-        const a = anglesOf(eyeP.clone().applyMatrix4(inv));
-        const ev = model.evalAt(a.theta, a.psi);
-        const html = `<b>${v.label}</b><span>亮度 <b>${Math.round(ev.yRatio * 100)}%</b> · 色偏 <b>${ev.jncd.toFixed(1)}</b> · ${a.theta.toFixed(0)}°</span>`;
+        const a = screenAngles(eyeP),ev=model?.evalAt(a.theta,a.psi);
+        const html = ev?`<b>${v.label}</b><span>亮度 <b>${Math.round(ev.yRatio * 100)}%</b> · 色偏 <b>${ev.jncd.toFixed(1)}</b> · ${a.theta.toFixed(0)}°</span>`:`<b>${v.label}</b><span>${a.theta.toFixed(0)}° · 测量待补充</span>`;
         if (it.cap.dataset.html !== html) { it.cap.innerHTML = html; it.cap.dataset.html = html; }
       });
-      u.uEye.value.copy(mainEye).applyMatrix4(inv);
+      setScreenEye(mainEye);
     }
     lookYou.setHead(headOf(you, eyeYou), rig.camera, mainViewer === 'you' || switching ? camFade : 0);
     lookNb.setHead(eyeNb ? headOf(nb, eyeNb) : eyeYou, rig.camera, mainViewer === 'nb' || switching ? camFade : 0);
 
     // 侧卧：讲解视角里标左眼（下）的三条视线，右眼（上）再画一条到屏幕中心
     const annEye = eyesLR ? eyesLR[0] : mainEye;
-    const probes = ann.update(annEye, phoneM, phone.half, model, eyesLR ? { eye: eyesLR[1], name: '右眼' } : otherEye ? { eye: otherEye, name: mainViewer === 'nb' ? '你' : '旁人' } : null);
+    const probes = model&&!device.foldable ? ann.update(annEye, phoneM, phone.half, model, eyesLR ? { eye: eyesLR[1], name: '右眼' } : otherEye ? { eye: otherEye, name: mainViewer === 'nb' ? '你' : '旁人' } : null):[];
     // 标注：过渡中、拖动中显示；结束后保留一会儿淡出。回到讲解视角时重新显示一会儿
     const dt = Math.min(100, now - lastFrame); lastFrame = now;
     const isExplain = rig.progress < 0.05;
@@ -1003,7 +1039,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const annOn = !!trans || !!drag || !!paramTween || now < annUntil;
     annAlpha = THREE.MathUtils.clamp(annAlpha + (annOn ? 1 : -1) * dt / 450, 0, 1);
     ann.setOpacity(annAlpha);
-    const annShow = isExplain && annAlpha > 0.005;
+    const annShow = isExplain && annAlpha > 0.005 && probes.length>0;
     ann.setVisible(annShow);
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, W, H);
@@ -1011,18 +1047,19 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     ann.layout(rig.camera, annEye, phoneM, phone.half, W, H, insetOn ? insets[0].rect[0] - 8 * uiK : W);   // 标签不压到右侧小窗
 
     // 数据面板（打开时才算）
-    if (data.visible) {
+    if(data.visible&&!model)data.updateEmpty(device.name+' · '+(duoSurface==='inner'?'内屏':'外屏'),'测量待补充，暂不显示亮度 / 色偏曲线');
+    if (data.visible && model && profile) {
       const ps = hasPrivacy() ? [...profilesOf(device)].sort((a, b) => Number(a.privacy) - Number(b.privacy)) : [profile];
       const film = privacyKind() === 'film';
       const panelProfiles: PanelProfile[] = ps.map((p) => ({
         id: p.id, label: p.privacy ? (film ? '贴防窥膜' : '防窥开启') : (film ? '未贴膜' : '防窥关闭'),
-        model: modelOf(p).model, lut: modelOf(p).lut, active: p.id === profile.id,
+        model: modelOf(p).model, lut: modelOf(p).lut, active: p.id === profile!.id,
       }));
-      const am = anglesOf(mainEye.clone().applyMatrix4(inv));
+      const am = screenAngles(mainEye);
       const eyes = [{ ...am, who: sub ? (mainViewer === 'nb' ? '旁人' : '你') : '眼睛' }];
-      if (otherEye && !stereoOn) eyes.push({ ...anglesOf(otherEye.clone().applyMatrix4(inv)), who: mainViewer === 'nb' ? '你' : '旁人' });
-      if (stereoOn && stereo.reads) eyes.splice(0, 1, ...stereo.reads.map((r, i) => ({ ...anglesOf(r.eye.clone().applyMatrix4(inv)), who: i ? '右眼' : '左眼' })));
-      else if (eyesLR) eyes.splice(0, 1, ...eyesLR.map((e, i) => ({ ...anglesOf(e.clone().applyMatrix4(inv)), who: i ? '右眼' : '左眼' })));
+      if (otherEye && !stereoOn) eyes.push({ ...screenAngles(otherEye), who: mainViewer === 'nb' ? '你' : '旁人' });
+      if (stereoOn && stereo.reads) eyes.splice(0, 1, ...stereo.reads.map((r, i) => ({ ...screenAngles(r.eye), who: i ? '右眼' : '左眼' })));
+      else if (eyesLR) eyes.splice(0, 1, ...eyesLR.map((e, i) => ({ ...screenAngles(e), who: i ? '右眼' : '左眼' })));
       data.update(panelProfiles, eyes, JMAX, device.name);
     }
 
@@ -1034,23 +1071,25 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     }
 
     // 读数（主观看者，屏幕中心）
-    const c = probes[1];
-    $('theta').textContent = `${c.theta.toFixed(0)}°`;
+    const c = probes[1],a=screenAngles(mainEye),ev=model?.evalAt(a.theta,a.psi);
+    $('theta').textContent = `${(c?.theta??a.theta).toFixed(0)}°`;
     $('where').textContent = sub ? `${mainViewer === 'nb' ? '旁人' : '你'}看屏幕中心的离轴角` : '屏幕中心离轴角';
     $('deK').textContent = 'ΔE2000';
     $('scene').textContent = rig.mode === 'eye' ? (sub ? `${mainViewer === 'nb' ? '旁人' : '你'}看到的屏幕` : `${preset.name} · 眼睛看到的屏幕`) : preset.name;
-    $('lum').textContent = `${Math.round(c.ev.yRatio * 100)}%`;
-    $('jncd').textContent = c.ev.jncd.toFixed(1);
-    $('de').textContent = c.ev.de00.toFixed(1);
-    $('warn').textContent = c.ev.clamped ? '超出实测范围（> 70°），按 70° 计' : '';
-    if (eyesLR) {     // 侧卧：两只眼睛分别的读数，ΔE2000 为两眼之间的色差
-      const r = eyesLR.map((e) => { const a = anglesOf(e.clone().applyMatrix4(inv)); return { theta: a.theta, ev: model.evalAt(a.theta, a.psi) }; });
+    const measured=c?.ev||ev;
+    $('lum').textContent = measured?`${Math.round(measured.yRatio * 100)}%`:'—';
+    $('jncd').textContent = measured?measured.jncd.toFixed(1):'—';
+    $('de').textContent = measured?measured.de00.toFixed(1):'—';
+    $('warn').textContent = measured?(measured.clamped?'超出实测范围（> 70°），按 70° 计':''):`${duoSurface==='inner'?'内屏':'外屏'}测量待补充 · 当前显示${displayMode===2?'离轴角分布':'原图'}`;
+    if (eyesLR && model) {     // 侧卧：两只眼睛分别的读数，ΔE2000 为两眼之间的色差
+      const current=model;
+      const r = eyesLR.map((e) => { const a = screenAngles(e); return { theta: a.theta, ev: current.evalAt(a.theta, a.psi) }; });
       $('theta').textContent = `${r[0].theta.toFixed(0)}° / ${r[1].theta.toFixed(0)}°`;
       $('where').textContent = '左眼（下）/ 右眼（上）离轴角';
       $('lum').textContent = `${Math.round(r[0].ev.yRatio * 100)}% / ${Math.round(r[1].ev.yRatio * 100)}%`;
       $('jncd').textContent = `${r[0].ev.jncd.toFixed(1)} / ${r[1].ev.jncd.toFixed(1)}`;
       $('deK').textContent = '两眼 ΔE2000';
-      $('de').textContent = deltaE2000(xyzToLab(r[0].ev.W, model.ref.W), xyzToLab(r[1].ev.W, model.ref.W)).toFixed(1);
+      $('de').textContent = deltaE2000(xyzToLab(r[0].ev.W, current.ref.W), xyzToLab(r[1].ev.W, current.ref.W)).toFixed(1);
       $('warn').textContent = r.some((x) => x.ev.clamped) ? '超出实测范围（> 70°），按 70° 计' : '';
     }
     if (++frames === 2) readyResolve();
@@ -1068,6 +1107,9 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     setView, setViewer, setPattern,
     setPrivacy(on: boolean) { privacy = on; syncDeviceUI(); useProfile(); },
     setDevice(id: string) { return setDevice(id); },
+    setFold,setDuoSurface,
+    get duoState(){return {fold,surface:duoSurface,profiles:{inner:opts.duoData?.inner||null,outer:opts.duoData?.outer||null}};},
+    setDisplayMode,
     get phoneSource() { return phone.source; },
     setData,
     setParam(key: string, v: number) { params[preset.id][key] = v; applySteady(buildState(preset), false); renderAdjust(); },
@@ -1112,7 +1154,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     },
     pause() { renderer.setAnimationLoop(null); active = false; },
     resume() { renderer.setAnimationLoop(frame); active = true; },
-    dispose() { renderer.setAnimationLoop(null); ro.disconnect(); renderer.dispose(); phone.dispose(); host.innerHTML = ''; },
+    dispose() { renderer.setAnimationLoop(null); ro.disconnect(); renderer.dispose(); phone.dispose(); imgTextures.forEach(t=>t.dispose()); host.innerHTML = ''; },
   };
 }
 export type Scene3D = Awaited<ReturnType<typeof mount>>;

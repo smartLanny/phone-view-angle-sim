@@ -70,6 +70,8 @@ h2 { margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--text-2); 
 .row-title { display: flex; justify-content: space-between; align-items: baseline; color: var(--text-2); margin: 2px 0 6px; }
 .row-title b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .row-title + input[type=range] + .row-title { margin-top: 12px; }
+.fold-title { margin-top: 14px; }
+#foldPresets { margin-top: 8px; }
 
 /* 按钮 / 分段 / 胶囊 */
 button, .upload {

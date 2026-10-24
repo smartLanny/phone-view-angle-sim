@@ -58,6 +58,9 @@ export interface PhoneModel {
   half: THREE.Vector2;
   /** 外观来源：参数化建模 / 苹果官网 AR 模型（本机） */
   source: 'param' | 'apple';
+  screens?: {key:'inner'|'outer';screen:PhoneModel['screen'];half:THREE.Vector2;spec:DeviceSpec['screen']}[];
+  setFold?(angle:number,surface:'inner'|'outer'):void;
+  surfaceFrame?(surface:'inner'|'outer',u:number,v:number):{point:number[];normal:number[];tangentU:number[];tangentV:number[]};
   setColor(c: ColorWay): void;
   dispose(): void;
 }

@@ -17,6 +17,7 @@ export interface DeviceSpec {
   /** data.js 里对应的机型名前缀 */
   dataDevice: string;
   model?: string;
+  foldable?: boolean;
   body: BodySpec;
   screen: {
     diag: number; resW: number; resH: number; corner: number; cutout: { y: number; half: number; r: number };
@@ -155,4 +156,12 @@ export const IPHONE_17_PRO_MAX: DeviceSpec = {
   rearDisplay: false,
 };
 
-export const DEVICES = [XIAOMI_18_PRO_MAX, IPHONE_18_PRO_MAX, HUAWEI_MATE_90_PRO_MAX, IPHONE_17_PRO_MAX];
+export const IPHONE_DUO: DeviceSpec = {
+  id:'iphoneduo',name:'iPhone Duo',dataDevice:'iPhone Duo',model:'iphoneduo',foldable:true,
+  body:{W:164.6,H:117.8,T:5.2,R:7,glassInset:1.5,backInset:1,fillet:.5,sideBulge:0,
+    island:{w:63.69,h:28.94,top:2,r:6,depth:3.5,mat:'frame',rim:0},lenses:[],flats:[],buttons:[],buttonThick:2,buttonOut:.3},
+  screen:{diag:7.58,resW:2670,resH:1878,corner:6,half:[78.765,55.4],cutout:{y:0,half:0,r:0}},
+  colors:[{id:'white',name:'星白色',swatch:'#e1dfd8',frame:'#dddcd6',back:'#ebe9e2',backRough:.5}],rearDisplay:false,
+};
+
+export const DEVICES = [XIAOMI_18_PRO_MAX, IPHONE_18_PRO_MAX, HUAWEI_MATE_90_PRO_MAX, IPHONE_17_PRO_MAX, IPHONE_DUO];

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>可视角度仿真</title>
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=20261024-duo">
 </head>
 <body data-layout="wide">
 <div class="sframe" id="sf0"></div>
@@ -22,7 +22,7 @@
 <header id="hud">
   <div class="brand">
     <span class="logo" aria-hidden="true"></span>可视角度仿真
-    <span class="tag">实测数据</span>
+    <span class="tag" id="dataTag">实测数据</span>
   </div>
   <div class="hero">
     <span class="hero-num" id="heroTheta">0°</span>
@@ -89,6 +89,7 @@
       </div>
       <div class="legend-row" id="curveLegend"></div>
       <div id="charts"></div>
+      <p class="note" id="curveEmpty" hidden>可视角测量完成后显示亮度与色偏曲线。</p>
     </section>
 
     <!-- ===== 机型 ===== -->
@@ -114,6 +115,22 @@
       <div class="chips" id="presets"></div>
       <label class="slot"><span class="key" style="--k:var(--s1)"></span><select id="slot0" aria-label="左侧"></select></label>
       <label class="slot"><span class="key" style="--k:var(--s2)"></span><select id="slot1" aria-label="右侧"></select></label>
+    </section>
+
+    <section class="sec" data-tab="device" id="secFold" hidden>
+      <h2>iPhone Duo</h2>
+      <div class="seg" id="duoSurface" aria-label="观察屏幕">
+        <button data-v="inner" class="on">内屏</button>
+        <button data-v="outer">外屏</button>
+      </div>
+      <div class="row-title fold-title"><span>折叠角度</span><b id="foldV">180°</b></div>
+      <input type="range" id="fold" min="0" max="180" step="1" value="180" aria-label="折叠角度">
+      <div class="chips" id="foldPresets">
+        <button data-angle="0">闭合</button>
+        <button data-angle="90">半开</button>
+        <button data-angle="180" class="on">展开</button>
+      </div>
+      <p class="note" id="duoStatus">内外屏可视角数据待测，当前显示原图。</p>
     </section>
 
     <section class="sec" data-tab="device" id="stereoGroup" hidden>
@@ -202,13 +219,15 @@
 <div id="drop">松开以加载图片</div>
 
 <script src="data.js?v=20261023-iphone17"></script>
+<script src="duo-data.js?v=20261024-duo"></script>
 <script src="model.js?v=12"></script>
 <script src="avatar.js"></script>
 <script src="patterns.js?v=12"></script>
-<script src="devices.js?v=20261023-iphone17"></script>
-<script src="phone3d.js?v=20261023-iphone17"></script>
-<script src="viz.js?v=12"></script>
+<script src="devices.js?v=20261024-duo"></script>
+<script src="duo-geometry.js?v=20261024-duo"></script>
+<script src="phone3d.js?v=20261024-duo"></script>
+<script src="viz.js?v=20261024-duo"></script>
 <!-- 三维场景（scene3d-person.js、scene3d.js）只在进入场景演示时再加载，见 app.js -->
-<script src="app.js?v=20261023-iphone17"></script>
+<script src="app.js?v=20261024-duo"></script>
 </body>
 </html>

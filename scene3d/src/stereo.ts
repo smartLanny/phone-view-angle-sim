@@ -14,7 +14,7 @@
  * 渲染：每只眼睛先画到主画布左下角的一块区域，再拷到各自的面板画布上（同一套色调映射与 sRGB 输出，颜色和主画面一致）。
  */
 import * as THREE from 'three';
-import { anglesOf, xyzToLab, deltaE2000, uvPrime, JNCD, type AngleModel, type Eval } from './optics/model';
+import { xyzToLab, deltaE2000, uvPrime, JNCD, type AngleModel, type Eval } from './optics/model';
 import { SECOND } from './annotate';
 
 export type StereoLayout = 'split' | 'overlay' | 'wiggle';
@@ -164,7 +164,7 @@ export class Stereo {
   render(now: number, o: {
     renderer: THREE.WebGLRenderer; W: number; H: number; k: number; baseFov: number; baseQuat: THREE.Quaternion;
     eye: THREE.Vector3; screen: THREE.Vector3; up: THREE.Vector3;
-    phoneInv: THREE.Matrix4; model: AngleModel; fitFov: (eye: THREE.Vector3, fill: number) => number;
+    anglesAt: (eye: THREE.Vector3) => {theta:number;psi:number}; model: AngleModel; fitFov: (eye: THREE.Vector3, fill: number) => number;
     /** chroma：屏幕色偏的倍数（双眼叠加时放大，其余为 1） */
     renderEye: (eye: THREE.Vector3, cam: THREE.PerspectiveCamera, chroma: number) => void;
     /** 工具栏排成两行时多出来的高度（未缩放的 px），底部多留出来 */
@@ -220,12 +220,11 @@ export class Stereo {
     const cams = [this.camL, this.camR];
     // 读数（按两眼最终的位置）；叠加时两边画面的色偏都乘上 gain，混合后的色偏 ≈ 双眼累加值
     const reads = fullEyes.map((ey) => {
-      const l = ey.clone().applyMatrix4(o.phoneInv).sub(new THREE.Vector3(0, 0, 0.0003));
-      const an = anglesOf(l);
+      const an = o.anglesAt(ey);
       return { theta: an.theta, ev: o.model.evalAt(an.theta, an.psi), eye: ey };
     }) as [EyeRead, EyeRead];
     this.reads = reads;
-    const mid = anglesOf(o.eye.clone().applyMatrix4(o.phoneInv).sub(new THREE.Vector3(0, 0, 0.0003)));
+    const mid = o.anglesAt(o.eye);
     const monoShift = o.model.evalAt(mid.theta, mid.psi).jncd;            // 不考虑双眼：只从两眼中点看
     const bino = binoShift(reads[0].ev.jncd, reads[1].ev.jncd);
     const avg = (reads[0].ev.jncd + reads[1].ev.jncd) / 2;

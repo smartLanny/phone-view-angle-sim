@@ -84,5 +84,16 @@
         { id: 'orange', name: '宇宙橙', swatch: '#ed8b5b', frame: [0.933107, 0.192871, 0.064319], back: [0.748414, 0.163458, 0.0460524] },
       ],
     },
+    'iPhone Duo': {
+      foldable: true, model: 'iphoneduo',
+      body: { W:164.6,H:117.8,T:5.2,R:7,glassInset:1.5 },
+      screen: {diag:7.58,resW:2670,resH:1878,corner:6.0,half:[78.765,55.40]},
+      screens: {
+        inner:{diag:7.58,resW:2670,resH:1878,corner:6.0,half:[78.765,55.40],cutout:{y:0,half:0,r:0},holes:[]},
+        outer:{diag:5.36,resW:1398,resH:2034,corner:5.6,half:[38.585,56.14],cutout:{y:0,half:0,r:0},holes:[[30.67,7.91,3.045]]},
+      },
+      cutout: {y:0,half:0,r:0},rough:.5,
+      colors:[{id:'white',name:'星白色',swatch:'#e1dfd8',frame:[.7,.69,.66],back:[.85,.84,.81]}],
+    },
   };
 })(window);

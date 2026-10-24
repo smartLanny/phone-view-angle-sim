@@ -8,8 +8,17 @@ import type { AngleModel } from './model';
 
 const VS = /* glsl */ `
   varying vec3 vLocal;
+  varying vec2 vFlat;
+  varying vec3 vNormal;
+  varying vec3 vTangent;
+  attribute vec2 screenLocal;
+  attribute vec3 screenTangent;
+  uniform bool uCurved;
   void main() {
     vLocal = position;
+    vFlat = uCurved ? screenLocal : position.xy;
+    vNormal = uCurved ? normal : vec3(0.0,0.0,1.0);
+    vTangent = uCurved ? screenTangent : vec3(1.0,0.0,0.0);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }`;
 
@@ -17,6 +26,9 @@ const FS = /* glsl */ `
   precision highp float;
   precision highp sampler2D;
   varying vec3 vLocal;
+  varying vec2 vFlat;
+  varying vec3 vNormal;
+  varying vec3 vTangent;
   out highp vec4 outColor;
   uniform sampler2D uImg;
   uniform sampler2D uLut;
@@ -29,6 +41,7 @@ const FS = /* glsl */ `
   uniform vec2 uImgScale;
   uniform int uMode;        // 0 实测效果  1 原图  2 离轴角分布
   uniform float uChroma;    // 色偏（色度偏离）的倍数，亮度不变；1 = 实测。双眼叠加时按双眼累加放大
+  uniform bool uHasData;
 
   vec3 srgb2lin(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
   vec3 lin2srgb(vec3 c) { c = clamp(c, 0.0, 1.0); return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
@@ -58,11 +71,13 @@ const FS = /* glsl */ `
   }
 
   void main() {
-    vec2 pp = vLocal.xy;
+    vec2 pp = vFlat;
     float px = length(fwidth(pp));
     float inside = 1.0 - smoothstep(-px, 0.0, sdRoundBox(pp, uHalf, uCorner));
 
-    vec3 d = uEye - vec3(pp, 0.0);
+    vec3 direction=uEye-vLocal, N=normalize(vNormal), T=normalize(vTangent), B=normalize(cross(N,T));
+    vec3 d=vec3(dot(direction,T),dot(direction,B),dot(direction,N));
+    if(d.z<=0.0)discard;
     float th = degrees(atan(length(d.xy), d.z));
     float ps = degrees(atan(d.y, d.x));
     if (ps < 0.0) ps += 360.0;
@@ -75,7 +90,7 @@ const FS = /* glsl */ `
       float t = clamp(th / 70.0, 0.0, 1.0);
       scr = mix(vec3(0.80, 0.89, 0.98), vec3(0.05, 0.21, 0.42), t);
       scr = mix(scr, t < 0.5 ? vec3(0.04, 0.1, 0.22) : vec3(0.85, 0.92, 1.0), 0.6 * isoLine(th, 10.0));
-    } else if (uMode == 1) {
+    } else if (uMode == 1 || !uHasData) {
       scr = lin2srgb(lin);
     } else {
       vec3 sim = vec3(dot(lut(0, th, ps), lin), dot(lut(1, th, ps), lin), dot(lut(2, th, ps), lin));
@@ -127,6 +142,8 @@ export function createScreenMaterial() {
       uImgScale: { value: new THREE.Vector2(1, 1) },
       uMode: { value: 0 },
       uChroma: { value: 1 },
+      uCurved: { value: false },
+      uHasData: { value: true },
     },
   });
 }

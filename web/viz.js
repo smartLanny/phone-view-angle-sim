@@ -167,13 +167,14 @@
       const { g, dpr } = hidpi(canvas);
       const G = geom();
       g.clearRect(0, 0, G.w, G.w);
-      if (!st.sampler || G.R <= 0) return;
+      if (G.R <= 0) return;
 
       // 热力图
       g.save();
       g.beginPath(); g.arc(G.cx, G.cy, G.R, 0, Math.PI * 2); g.clip();
       g.imageSmoothingEnabled = true;
-      g.drawImage(buildHeat(G.R, dpr), G.cx - G.R, G.cy - G.R, 2 * G.R, 2 * G.R);
+      if (st.sampler) g.drawImage(buildHeat(G.R, dpr), G.cx - G.R, G.cy - G.R, 2 * G.R, 2 * G.R);
+      else { g.fillStyle = 'rgba(255,255,255,.035)'; g.fillRect(0, 0, G.w, G.w); }
 
       const dark = palette(st.pal).grid === 'dark';
       // 无实测、靠镜像补全的扇区：45° 斜线纹理

@@ -14,23 +14,29 @@
   const specOf = (device) => SPECS[specKey(device) || KNOWN[0]];
   const rank = (device) => { const i = KNOWN.indexOf(specKey(device)); return i < 0 ? KNOWN.length : i; };
 
-  const PROFILES = DATA.profiles;
+  const DUO_PROFILES = ['inner', 'outer'].map((surface) => Object.assign(
+    { sets: null }, window.DUO_DATA[surface] || {},
+    { id: `duo-${surface}`, device: 'iPhone Duo', surface, privacy: false },
+  ));
+  const PROFILES = [...DATA.profiles, ...DUO_PROFILES];
   const DEVICES = [...new Set(PROFILES.map((p) => p.device))].sort((a, b) => rank(a) - rank(b));
   const byId = (id) => PROFILES.find((p) => p.id === id);
   const variant = (device, privacy) => PROFILES.find((p) => p.device === device && p.privacy === privacy);
   const hasPrivacy = (device) => !!variant(device, true) && !!variant(device, false);
   const pick = (device) => variant(device, false) || variant(device, true);
-  const shortName = (device) => device.match(/^iPhone \d+/)?.[0] || device.split(' ')[0];
+  const shortName = (device) => device.match(/^iPhone (?:\d+|Duo)/)?.[0] || device.split(' ')[0];
+  const surfaceName = (surface) => surface === 'outer' ? '外屏' : '内屏';
   /** 图例用短名：“小米 · 防窥关闭”“iPhone GH3 · 未贴膜”。 */
   function shortLabel(p) {
     const k = specKey(p.device) || p.device, suffix = p.device.slice(k.length).trim();
-    const name = [shortName(p.device), suffix].filter(Boolean).join(' ');
+    const name = [shortName(p.device), suffix, p.surface ? surfaceName(p.surface) : ''].filter(Boolean).join(' ');
     return hasPrivacy(p.device) ? `${name} · ${privacyText(p.device)[p.privacy ? 'on' : 'off']}` : name;
   }
 
   const S = {
     dist: 300, tilt: [0, 0], theta: 0, psi: 0, rot: 0, mode: 0, pattern: 'ui', colors: {},
     compare: false, device: DEVICES[0], privacy: false,
+    fold: 180, duoSurface: 'inner',
     stereo: false, cross: false, ipd: 63, gap: 8, size: 1,
     slots: DEVICES.length > 1
       ? [pick(DEVICES[0]).id, pick(DEVICES[1]).id]
@@ -40,7 +46,7 @@
 
   // 缺失方位用上下镜像补全（见 model.js 'vmirror'）
   const models = {};
-  const getModel = (id) => models[id] ||
+  const getModel = (id) => !byId(id).sets ? null : models[id] ||
     (models[id] = AngleModel.createModel({ angles: DATA.angles, sets: byId(id).sets }, { fill: 'vmirror' }));
   const MAX_TILT = getModel(PROFILES[0].id).thetaMax;
   let image = null;
@@ -53,7 +59,9 @@
   const grids = {};
   function getGrid(id) {
     if (grids[id]) return grids[id];
-    const m = getModel(id), lut = getLUT(id), w = lut.width;
+    const m = getModel(id);
+    if (!m) return null;
+    const lut = getLUT(id), w = lut.width;
     const refW = m.ref.W, refUV = m.uvPrime(refW);
     const lum = new Float32Array(w * 360), jn = new Float32Array(w * 360);
     for (let psi = 0; psi < 360; psi++) {
@@ -79,6 +87,7 @@
     let j = 0, l = 1;
     for (const p of PROFILES) {
       const m = getModel(p.id);
+      if (!m) continue;
       for (let th = 5; th <= m.thetaMax; th += 5) {
         for (let psi = 0; psi < 360; psi += 15) {
           const e = m.evalAt(th, psi);
@@ -96,16 +105,20 @@
   };
   const privacyText = (device) => PRIVACY_TEXT[(variant(device, true) || {}).privacyKind] || PRIVACY_TEXT.mode;
   function profileLabel(p, withDevice = DEVICES.length > 1) {
+    if (p.surface) return `${withDevice ? p.device + ' · ' : ''}${surfaceName(p.surface)}${p.sets ? '' : '（待测）'}`;
     if (!hasPrivacy(p.device)) return p.device;
     const t = privacyText(p.device), mode = p.privacy ? t.on : t.off;
     return withDevice ? `${p.device} · ${mode}` : mode;
   }
   function activeIds() {
     if (S.compare) return S.slots;
+    if (S.device === 'iPhone Duo') return [`duo-${S.duoSurface}`];
     const p = variant(S.device, S.privacy) || variant(S.device, !S.privacy);
     return [p.id];
   }
   const activeDevices = () => [...new Set(activeIds().map((id) => byId(id).device))];
+  const hasDuo = () => activeDevices().includes('iPhone Duo');
+  const devForProfile = (id) => dev(byId(id).device, byId(id).surface);
   function colorOf(device) {
     const cs = specOf(device).colors;
     return cs.find((c) => c.id === S.colors[device]) || cs[0];
@@ -116,37 +129,47 @@
   const devCache = {};
   const pendingModels = new Set();
   const failedModels = new Set();
-  function dev(name) {
-    if (devCache[name]) return devCache[name];
+  function dropDev(key) {
+    const d = devCache[key];
+    d.body.dispose();
+    d.screens.forEach((s) => s.screen.dispose());
+    delete devCache[key];
+  }
+  function dev(name, surface = S.duoSurface) {
+    const duo = name === 'iPhone Duo', key = duo ? `${name}|${surface}` : name;
+    if (devCache[key] && (!duo || devCache[key].fold === S.fold)) return devCache[key];
+    if (devCache[key]) dropDev(key);
     const spec = specOf(name);
     if (spec.model && !Phone3D.hasModel(spec.model) && !pendingModels.has(spec.model) && !failedModels.has(spec.model)) {
       pendingModels.add(spec.model);
       Phone3D.loadModel(spec.model).then(() => {
-        for (const key of Object.keys(devCache)) if (specOf(key).model === spec.model) delete devCache[key];
+        for (const key of Object.keys(devCache)) if (devCache[key].spec.model === spec.model) dropDev(key);
         requestRender();
       }).catch((err) => {
         failedModels.add(spec.model);
         toast(err.message);
       }).finally(() => pendingModels.delete(spec.model));
     }
-    const phone = Phone3D.build(spec.body, spec.model);
-    const P = phone.spec, sc = spec.screen;
+    const phone = duo ? Phone3D.buildDuo(S.fold, surface) : Phone3D.build(spec.body, spec.model);
+    const P = phone.spec, sc = duo ? spec.screens[surface] : spec.screen;
     const ratio = sc.resH / sc.resW;
     const w = (sc.diag * 25.4) / Math.sqrt(1 + ratio * ratio);
-    const corners = [];
-    for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const z of [0, -P.T]) corners.push([sx * P.W / 2, sy * P.H / 2, z]);
-    return (devCache[name] = {
-      name, spec, corners,
+    const corners = phone.corners || [];
+    if (!phone.corners) for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const z of [0, -P.T]) corners.push([sx * P.W / 2, sy * P.H / 2, z]);
+    const screens = duo ? phone.screens : [{ mesh: phone.screen, screenHalf: sc.half || [w / 2, (w * ratio) / 2], corner: sc.corner, cutout: spec.cutout, holes: sc.holes }];
+    return (devCache[key] = {
+      name, spec, corners, fold: S.fold, surface,
       screenHalf: sc.half || [w / 2, (w * ratio) / 2],
       body: meshVAO(bodyProg, phone.body, true),
-      screen: meshVAO(screenProg, phone.screen, false),
+      surfaceFrame: phone.surfaceFrame,
+      screens: screens.map((s) => Object.assign({}, s, { screen: meshVAO(screenProg, s.mesh, false) })),
     });
   }
   function retryFailedModels() {
     for (const name of activeDevices()) {
       const model = specOf(name).model;
       if (!failedModels.delete(model)) continue;
-      for (const key of Object.keys(devCache)) if (specOf(key).model === model) delete devCache[key];
+      for (const key of Object.keys(devCache)) if (devCache[key].spec.model === model) dropDev(key);
     }
   }
   const dispMM = (d) => {
@@ -181,6 +204,12 @@
       theta: Math.atan2(Math.hypot(d[0], d[1]), d[2]) / DEG,
       psi: AngleModel.norm360(Math.atan2(d[1], d[0]) / DEG),
     };
+  }
+  function anglesAt(eye, point, frame) {
+    const d = eye.map((n, i) => n - point[i]);
+    if (!frame) return anglesOf(d);
+    const dot = (axis) => d.reduce((sum, n, i) => sum + n * axis[i], 0);
+    return anglesOf([dot(frame.tangentU), dot(frame.tangentV), dot(frame.normal)]);
   }
 
   // 投影: 眼睛位于 (0,0,D)（双眼立体时为 (∓瞳距/2,0,D)）看向屏幕中心；缩放使手机始终完整可见。
@@ -422,12 +451,19 @@
 
   const SCREEN_VS = `#version 300 es
   in vec3 aPos;
+  in vec2 aLocal;
+  in vec3 aNor;
+  in vec3 aTangent;
   out vec2 vLocal;
   out vec3 vWorld;
+  out vec3 vNormal;
+  out vec3 vTangent;
   ${COMMON_VS}
   void main() {
-    vLocal = aPos.xy;
+    vLocal = aLocal;
     vWorld = uModel * aPos;
+    vNormal = aNor;
+    vTangent = aTangent;
     gl_Position = project(vWorld);
   }`;
 
@@ -437,6 +473,8 @@
   precision highp sampler2D;
   in vec2 vLocal;
   in vec3 vWorld;
+  in vec3 vNormal;
+  in vec3 vTangent;
   out vec4 outColor;
 
   uniform sampler2D uImg;
@@ -492,6 +530,10 @@
     float screen = 1.0 - smoothstep(-px, 0.0, sdRoundBox(pp, uScreenHalf, uCorner));
 
     vec3 d = transpose(uModel) * (uEye - vWorld);
+    vec3 n = normalize(vNormal), t = normalize(vTangent);
+    vec3 b = normalize(cross(n, t));
+    d = vec3(dot(d, t), dot(d, b), dot(d, n));
+    if (d.z <= 0.0) discard;
     float th = degrees(atan(length(d.xy), d.z));
     float ps = degrees(atan(d.y, d.x));
     if (ps < 0.0) ps += 360.0;
@@ -553,11 +595,13 @@
 
   function meshVAO(prog, mesh, withNormals) {
     const vao = gl.createVertexArray();
+    const buffers = [];
     gl.bindVertexArray(vao);
     const attr = (name, data, size) => {
       const loc = gl.getAttribLocation(prog.p, name);
       if (loc < 0) return;
       const buf = gl.createBuffer();
+      buffers.push(buf);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
       gl.enableVertexAttribArray(loc);
@@ -567,12 +611,17 @@
     if (withNormals) {
       attr('aNor', mesh.nor, 3); attr('aMat', mesh.mat, 1); attr('aUv', mesh.uv, 2);
       if (mesh.tint) { attr('aTint', mesh.tint, 3); attr('aFinish', mesh.finish, 2); }
+    } else {
+      attr('aNor', mesh.nor, 3);
+      attr('aLocal', mesh.local || mesh.pos.filter((_, i) => i % 3 !== 2), 2);
+      attr('aTangent', mesh.tangent || mesh.pos.map((_, i) => i % 3 === 0 ? 1 : 0), 3);
     }
     const ib = gl.createBuffer();
+    buffers.push(ib);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(mesh.idx), gl.STATIC_DRAW);
     gl.bindVertexArray(null);
-    return { vao, count: mesh.idx.length };
+    return { vao, count: mesh.idx.length, dispose() { buffers.forEach((b) => gl.deleteBuffer(b)); gl.deleteVertexArray(vao); } };
   }
   gl.useProgram(screenProg.p);
   gl.uniform1i(screenProg.u.uImg, 0);
@@ -591,7 +640,8 @@
   function bindLUT(id) {
     gl.activeTexture(gl.TEXTURE1);
     if (lutTex[id]) { gl.bindTexture(gl.TEXTURE_2D, lutTex[id].tex); return lutTex[id].width; }
-    const lut = getLUT(id);
+    // 原图占位仍需一张完整纹理供 WebGL 的 sampler 校验；它不参与光学计算。
+    const lut = getModel(id) ? getLUT(id) : { data: new Float32Array(8), width: 2, height: 1 };
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -699,7 +749,8 @@
   }
 
   function setCommon(prog, M, v) {
-    const near = Math.max(v.D - 100, 1), far = v.D + 100;
+    const radius = Math.max(100, ...v.dev.corners.map((c) => Math.hypot(...c)));
+    const near = Math.max(v.D - radius, 1), far = v.D + radius;
     const k2 = 2 / (1 / near - 1 / far), k1 = 1 + k2 / far;
     gl.uniformMatrix3fv(prog.u.uModel, false, [M[0], M[3], M[6], M[1], M[4], M[7], M[2], M[5], M[8]]);
     gl.uniform1f(prog.u.uEyeD, v.D);
@@ -713,7 +764,7 @@
     applyPalette();
     const M = modelMatrix();
     const ids = S.stereo ? [activeIds()[0], activeIds()[0]] : activeIds();
-    computeViews(ids.map((id) => dev(byId(id).device)));
+    computeViews(ids.map(devForProfile));
     placeFrames();
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 0);
@@ -746,27 +797,31 @@
 
     gl.useProgram(screenProg.p);
     gl.uniform1f(screenProg.u.uRot, S.rot);
-    gl.uniform1i(screenProg.u.uMode, S.mode);
     const P = Viz.palette(S.pal);
     gl.uniform1i(screenProg.u.uBands, P.banded ? 7 : 0);
     gl.uniform1i(screenProg.u.uPalFlip, P.flipAngle ? 1 : 0);
     views.forEach((v, i) => {
       clip(v);
-      const d = v.dev, cut = d.spec.cutout;
-      gl.uniform2fv(screenProg.u.uScreenHalf, d.screenHalf);
-      gl.uniform1f(screenProg.u.uCorner, d.spec.screen.corner);
-      gl.uniform3f(screenProg.u.uCut, cut.y, cut.half, cut.r);
-      const holes = d.spec.screen.holes || [];
-      for (let h = 0; h < 3; h++) {
-        const hole = holes[h];
-        gl.uniform3f(screenProg.u[`uHole${h}`], hole ? hole[0] : 0, hole ? d.screenHalf[1] - hole[1] : 0, hole ? hole[2] : 0);
+      const d = v.dev;
+      for (const screen of d.screens) {
+        const cut = screen.cutout || { y: 0, half: 0, r: 0 };
+        const id = screen.key ? `duo-${screen.key}` : ids[i];
+        gl.uniform1i(screenProg.u.uMode, S.mode === 0 && !getModel(id) ? 1 : S.mode);
+        gl.uniform2fv(screenProg.u.uScreenHalf, screen.screenHalf);
+        gl.uniform1f(screenProg.u.uCorner, screen.corner);
+        gl.uniform3f(screenProg.u.uCut, cut.y, cut.half, cut.r);
+        const holes = screen.holes || [];
+        for (let h = 0; h < 3; h++) {
+          const hole = holes[h];
+          gl.uniform3f(screenProg.u[`uHole${h}`], hole ? hole[0] : 0, hole ? screen.screenHalf[1] - hole[1] : 0, hole ? hole[2] : 0);
+        }
+        gl.uniform2fv(screenProg.u.uDispMM, dispMM(screen));
+        gl.uniform2fv(screenProg.u.uImgScale, imgScale(screen));
+        gl.uniform1i(screenProg.u.uLutW, bindLUT(id));
+        gl.bindVertexArray(screen.screen.vao);
+        setCommon(screenProg, M, v);
+        gl.drawElements(gl.TRIANGLES, screen.screen.count, gl.UNSIGNED_INT, 0);
       }
-      gl.uniform2fv(screenProg.u.uDispMM, dispMM(d));
-      gl.uniform2fv(screenProg.u.uImgScale, imgScale(d));
-      gl.uniform1i(screenProg.u.uLutW, bindLUT(ids[i]));
-      gl.bindVertexArray(d.screen.vao);
-      setCommon(screenProg, M, v);
-      gl.drawElements(gl.TRIANGLES, d.screen.count, gl.UNSIGNED_INT, 0);
     });
     gl.bindVertexArray(null);
     gl.disable(gl.SCISSOR_TEST);
@@ -778,9 +833,9 @@
 
   // ---------- 信息显示 ----------
   /** 屏幕局部坐标 p 处左右眼（局部坐标 L、R）所见白场的差异；参考白取两眼白场平均，不依赖 0° 基准。 */
-  function binoAt(m, L, R, p) {
-    const a = anglesOf([L[0] - p[0], L[1] - p[1], L[2] - p[2]]);
-    const b = anglesOf([R[0] - p[0], R[1] - p[1], R[2] - p[2]]);
+  function binoAt(m, L, R, p, frame) {
+    const a = anglesAt(L, p, frame);
+    const b = anglesAt(R, p, frame);
     const el = m.evalAt(a.theta, a.psi), er = m.evalAt(b.theta, b.psi);
     const Wm = el.W.map((v, k) => (v + er.W[k]) / 2);
     const u1 = m.uvPrime(el.W), u2 = m.uvPrime(er.W);
@@ -793,11 +848,13 @@
   }
   /** 全屏 5×9 个点的平均双眼差异。 */
   function binoStats(M, id) {
-    const m = getModel(id), [hx, hy] = dev(byId(id).device).screenHalf;
+    const m = getModel(id), d = devForProfile(id), [hx, hy] = d.screenHalf;
     const L = applyT(M, eyePos(-1)), R = applyT(M, eyePos(1));
     const acc = { dl: 0, j: 0, de: 0 };
     for (let iy = 0; iy < 9; iy++) for (let ix = 0; ix < 5; ix++) {
-      const r = binoAt(m, L, R, [((ix + 0.5) / 5 * 2 - 1) * hx, ((iy + 0.5) / 9 * 2 - 1) * hy, 0]);
+      const u = (ix + 0.5) / 5, v = (iy + 0.5) / 9;
+      const frame = d.surfaceFrame?.(byId(id).surface, u, v);
+      const r = binoAt(m, L, R, frame ? frame.point : [(u * 2 - 1) * hx, (v * 2 - 1) * hy, 0], frame);
       acc.dl += r.dl / 45; acc.j += r.j / 45; acc.de += r.de / 45;
     }
     return acc;
@@ -828,8 +885,11 @@
   function capName(p, i) {
     const key = S.compare ? `<span class="key" style="--k:${SERIES[i]}"></span>` : '';
     const st = hasPrivacy(p.device) ? `<small>${privacyText(p.device)[p.privacy ? 'on' : 'off']}</small>` : '';
-    return `<div class="cap-name">${key}${p.device}${st}</div>`;
+    return `<div class="cap-name">${key}${p.device}${p.surface ? ' · ' + surfaceName(p.surface) : ''}${st}</div>`;
   }
+  const pendingCaption = (p, i) => capName(p, i) +
+    `<div class="cap-stats">${stat('—', '', '亮度')}${stat('—', '', '色偏')}${stat('—', '', 'ΔE2000')}</div>` +
+    `<div class="note">${surfaceName(p.surface)}可视角数据待测${S.mode === 2 ? ' · 当前仅显示几何离轴角' : ' · 当前显示原图'}</div>`;
 
   /** 屏幕中心对应的 (θ, ψ手机坐标)；θ≈0 时沿用当前方向，保证曲线方向稳定。 */
   const psiLocal = () => AngleModel.norm360(S.psi + S.rot);
@@ -838,12 +898,18 @@
     $('distV').textContent = Math.round(S.dist / 10) + ' cm';
     $('heroTheta').textContent = Math.round(S.theta) + '°';
     $('heroDir').textContent = S.theta < 0.5 ? '正对屏幕' : `从${Viz.dirName(S.psi)}看`;
-    $('heroSub').textContent = `屏幕中心离轴角 · 观看距离 ${Math.round(S.dist / 10)} cm`;
+    const duo = byId(ids[0]).surface;
+    $('heroSub').textContent = `${duo ? '机身偏转角 · 折叠 ' + S.fold + '°' : '屏幕中心离轴角'} · 观看距离 ${Math.round(S.dist / 10)} cm`;
+    $('dataTag').textContent = ids.some((id) => !getModel(id)) ? '数据待测' : '实测数据';
     $('legend').classList.toggle('show', S.mode === 2);
     updatePad(M);
     updateCharts();
 
     if (S.stereo) {
+      if (!getModel(ids[0])) {
+        [0, 1].forEach((i) => placeCaption($('cap' + i), views[i], pendingCaption(byId(ids[0]), 0)));
+        return;
+      }
       const b = binoStats(M, ids[0]);
       const html = capName(byId(ids[0]), 0) +
         `<div class="cap-stats">${stat(b.dl.toFixed(1), '%', '双眼亮度差')}${stat(b.j.toFixed(2), 'JNCD', '双眼色度差')}${stat(b.de.toFixed(1), '', '双眼 ΔE2000')}</div>` +
@@ -857,7 +923,10 @@
     [0, 1].forEach((i) => {
       const el = $('cap' + i), v = views[i];
       if (!v) { el.style.display = 'none'; return; }
-      const e = getModel(ids[i]).evalAt(c.theta, psi);
+      if (!getModel(ids[i])) { placeCaption(el, v, pendingCaption(byId(ids[i]), i)); return; }
+      const frame = v.dev.surfaceFrame?.(byId(ids[i]).surface);
+      const a = frame ? anglesAt(applyT(M, v.eye), frame.point, frame) : { theta: c.theta, psi };
+      const e = getModel(ids[i]).evalAt(a.theta, a.psi);
       placeCaption(el, v, capName(byId(ids[i]), i) +
         `<div class="cap-stats">${stat(Math.round(e.yRatio * 100), '%', '亮度')}${stat(e.jncd.toFixed(1), 'JNCD', '色偏')}${stat(e.de00.toFixed(1), '', 'ΔE2000')}</div>`);
     });
@@ -895,6 +964,7 @@
     const h = padHover || { theta: S.theta, psi: S.psi };
     const where = h.theta < 0.5 ? '正对' : `${Math.round(h.theta)}° ${Viz.dirName(h.psi)}`;
     const who = S.compare ? `<span class="key" style="--k:${SERIES[0]}"></span>` : '';
+    if (!g) { padRead.innerHTML = `${who}${where} · <b>${surfaceName(byId(id).surface)}数据待测</b>`; return; }
     const v = g[S.padMetric](h.theta, h.psi + S.rot);
     padRead.innerHTML = `${who}<span class="dim">${padHover ? '指针处' : '当前'}</span> ${where} · <b>${mf.fmt(v)}</b>`;
   }
@@ -902,6 +972,14 @@
   function updatePad(M) {
     const id = activeIds()[0], m = getModel(id), g = getGrid(id), mf = metricFmt[S.padMetric];
     applyPalette();
+    if (!m) {
+      pad.setField(`${id}|pending`, null, { pal: 'mono', levels: 0 });
+      pad.update({ theta: S.theta, psi: S.psi, rot: S.rot, spokes: [], hatch: [], eyes: null });
+      $('padRamp').style.background = 'var(--raise)';
+      $('padTicks').innerHTML = '<span>可视角数据待测</span>';
+      updatePadRead();
+      return;
+    }
     pad.setField(`${id}|${S.padMetric}|${S.pal}`, (th, psi) => mf.t(g[S.padMetric](th, psi)), { pal: S.pal, levels: mf.levels });
     $('padRamp').style.background = Viz.paletteCSS(S.pal, mf.levels, false);
     const spokes = m.lines.filter((l) => !l.virtual).map((l) => l.psi);
@@ -940,12 +1018,14 @@
   function updateCharts() {
     const ids = S.stereo ? [activeIds()[0]] : activeIds();
     const psi = psiLocal();
-    const series = ids.map((id, i) => Object.assign({ label: shortLabel(byId(id)), color: SERIES[i] }, seriesFor(id, psi)));
-    $('curveDir').textContent = `沿${S.theta < 0.5 ? '右侧' : Viz.dirName(S.psi)}方向 · 屏幕中心`;
-    const leg = series.length > 1
-      ? series.map((s) => `<span><i style="--k:${s.color}"></i>${s.label}</span>`).join('') : '';
+    const series = ids.flatMap((id, i) => getModel(id) ? [Object.assign({ label: shortLabel(byId(id)), color: SERIES[i] }, seriesFor(id, psi))] : []);
+    $('curveDir').textContent = series.length ? `沿${S.theta < 0.5 ? '右侧' : Viz.dirName(S.psi)}方向 · 屏幕中心` : '等待实测';
+    const leg = ids.length > 1
+      ? ids.map((id, i) => `<span><i style="--k:${SERIES[i]}"></i>${shortLabel(byId(id))}${getModel(id) ? '' : ' · 待测'}</span>`).join('') : '';
     if ($('curveLegend')._html !== leg) { $('curveLegend').innerHTML = leg; $('curveLegend')._html = leg; }
-    charts.update({ series, cursor: S.theta, jMax: JMAX, lMax: Math.max(100, Math.ceil(RANGE.lum * 10) * 10), ph: window.innerHeight < 820 ? 42 : 58 });
+    $('charts').hidden = !series.length;
+    $('curveEmpty').hidden = !!series.length;
+    if (series.length) charts.update({ series, cursor: S.theta, jMax: JMAX, lMax: Math.max(100, Math.ceil(RANGE.lum * 10) * 10), ph: window.innerHeight < 820 ? 42 : 58 });
   }
 
   // ---------- 屏幕悬停读数 ----------
@@ -957,6 +1037,7 @@
     if (vi < 0) { hide(); return; }
     const view = views[vi];
     const id = activeIds()[S.stereo ? 0 : vi];
+    if (byId(id).surface) { hide(); return; }
     const M = modelMatrix();
     const E = view.eye;
     const dir = [(hover.x - view.cx) / view.f - E[0] / view.D, -(hover.y - view.cy) / view.f, -1];
@@ -1229,7 +1310,8 @@
     $('devCards').innerHTML = DEVICES.map((d) => {
       const k = specKey(d) || d, suffix = d.slice(k.length).trim();
       const t = privacyText(d);
-      const sub = hasPrivacy(d) ? `${t.off} / ${t.on} 两组实测` : '一组实测';
+      const sub = d === 'iPhone Duo' ? '内屏 / 外屏 · ' + (DUO_PROFILES.some((p) => !p.sets) ? '数据待测' : '实测数据')
+        : hasPrivacy(d) ? `${t.off} / ${t.on} 两组实测` : '一组实测';
       return `<button class="dev-card${d === S.device ? ' on' : ''}" data-d="${d}">` +
         `<span class="ph" style="--c1:${colorOf(d).swatch}"></span>` +
         `<span><b>${k}${suffix ? `<span class="badge" title="屏幕版本">${suffix}</span>` : ''}</b><small>${sub}</small></span></button>`;
@@ -1280,6 +1362,10 @@
     $('secDevice').hidden = S.compare;
     $('secSlots').hidden = !S.compare;
     $('stereoGroup').hidden = !S.stereo;
+    $('secFold').hidden = !hasDuo();
+    $('duoSurface').hidden = S.compare;
+    syncSeg('duoSurface', S.duoSurface);
+    syncFoldUI();
     [0, 1].forEach((i) => { $('slot' + i).value = S.slots[i]; });
     document.querySelectorAll('#presets button').forEach((b) => {
       const p = PRESETS[+b.dataset.i];
@@ -1300,6 +1386,22 @@
     sel.addEventListener('change', () => { S.slots[i] = sel.value; retryFailedModels(); syncProfileUI(); requestRender(); });
   });
   $('privacy').addEventListener('change', (e) => { S.privacy = e.target.checked; syncProfileUI(); requestRender(); });
+  function syncFoldUI() {
+    $('fold').value = S.fold;
+    $('foldV').textContent = S.fold + '°';
+    $('foldPresets').querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.angle === S.fold));
+    const missing = DUO_PROFILES.filter((p) => !p.sets).map((p) => surfaceName(p.surface)).join('、');
+    $('duoStatus').textContent = missing ? `${missing}可视角数据待测，当前显示原图。` : '内外屏各自使用对应的实测数据。';
+  }
+  function setFold(angle) {
+    stopSweep();
+    S.fold = Math.min(180, Math.max(0, +angle));
+    syncFoldUI();
+    requestRender();
+  }
+  bindSeg('duoSurface', (v) => { S.duoSurface = v; syncProfileUI(); requestRender(); });
+  $('fold').addEventListener('input', (e) => setFold(e.target.value));
+  $('foldPresets').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setFold(b.dataset.angle); });
   bindSeg('compare', (v) => { S.compare = v === '1'; S.stereo = v === '2'; retryFailedModels(); syncProfileUI(); requestRender(); });
   bindSeg('stereoView', (v) => { S.cross = v === '1'; requestRender(); });
   $('size').addEventListener('input', (e) => { S.size = e.target.value / 100; $('sizeV').textContent = e.target.value + '%'; requestRender(); });
@@ -1309,7 +1411,8 @@
   /** 测试画面按当前（对比时为左侧）机型的屏幕分辨率生成。 */
   let patternKey = '';
   function loadPattern(name, force) {
-    const sc = specOf(byId(activeIds()[0]).device).screen;
+    const p = byId(activeIds()[0]), spec = specOf(p.device);
+    const sc = p.surface ? spec.screens[p.surface] : spec.screen;
     const w = S.rot === 90 ? sc.resH : sc.resW, h = S.rot === 90 ? sc.resW : sc.resH;
     const key = `${name}:${w}x${h}`;
     S.pattern = name;
@@ -1367,6 +1470,7 @@
       if (S.pattern && S.pattern !== 'ui') q.set('img', S.pattern);
       if (S.mode) q.set('m', S.mode);
       if (S.rot) q.set('rot', S.rot);
+      if (hasDuo()) { q.set('fold', S.fold); q.set('ds', S.duoSurface); }
       if (S.padMetric !== 'lum') q.set('k', S.padMetric);
       if (S.pal !== 'jet') q.set('pal', S.pal);
       if (appMode === 'scene') q.set('mode', '3d');
@@ -1387,6 +1491,8 @@
     if (q.has('img') && /^(ui|dark|read|white|rgbw|checker|gray)$/.test(q.get('img'))) S.pattern = q.get('img');
     S.mode = [0, 1, 2].includes(num('m', 0)) ? num('m', 0) : 0;
     S.rot = num('rot', 0) === 90 ? 90 : 0;
+    S.fold = Math.min(180, Math.max(0, num('fold', 180)));
+    S.duoSurface = q.get('ds') === 'outer' ? 'outer' : 'inner';
     if (q.get('k') === 'jncd') S.padMetric = 'jncd';
     if (Viz.PALETTES[q.get('pal')]) S.pal = q.get('pal');
     appMode = /^(3d|scene)$/.test(q.get('mode') || '') ? 'scene' : 'sim';
@@ -1396,7 +1502,7 @@
 
   // ---------- 模式：屏幕仿真（默认，本页原有工具）/ 场景演示（三维，scene3d.js，做动画用，从“画面 → 更多”进入） ----------
   let appMode = 'sim', scene3d = null, scene3dLoading = null;
-  const S3D_VER = 7;
+  const S3D_VER = 8;
   const loadScript = (src) => new Promise((res, rej) => {
     const s = document.createElement('script');
     s.src = src; s.onload = res; s.onerror = () => rej(new Error('无法加载 ' + src));
@@ -1415,7 +1521,7 @@
       else if (!scene3dLoading) {
         $('scene3d').classList.add('loading');
         // 加载失败（或浏览器不支持 WebGL2）时退回屏幕仿真
-        scene3dLoading = loadScene3D().then(() => window.Scene3D.mount($('scene3d'), { device: specOf(S.device).model }))
+        scene3dLoading = loadScene3D().then(() => window.Scene3D.mount($('scene3d'), { device: specOf(S.device).model, fold: S.fold, duoSurface: S.duoSurface }))
           .then((a) => { scene3d = a; window.scene3d = a; $('scene3d').classList.remove('loading'); })
           .catch((err) => { console.error(err); scene3dLoading = null; $('scene3d').classList.remove('loading'); toast('三维场景加载失败，已切回屏幕仿真'); setAppMode('sim'); });
       }
@@ -1443,5 +1549,5 @@
   setAppMode(appMode);
 
   // 调试 / 截图用
-  window.viewAngle = { S, setView, animateTo, setClean, setDist, getModel, render: () => render() };
+  window.viewAngle = { S, setView, animateTo, setClean, setDist, setFold, getModel, render: () => render() };
 })();

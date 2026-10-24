@@ -121,19 +121,25 @@
     }));
   }
 
-  function modelMesh(buffer) {
+  function modelMesh(buffer, split = false) {
     const data = new DataView(buffer), length = data.getUint32(12, true);
     const json = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 20, length)));
     const binary = 28 + length;
     const body = new Mesh();
     body.tint = []; body.finish = [];
+    const sides = {};
+    if (split) {
+      body.leaf = [];
+      const visit = (index, side = 0) => { const n=json.nodes[index]; if(n.name==='left-leaf')side=-1;if(n.name==='right-leaf')side=1;if(n.mesh!==undefined)sides[n.mesh]=side;for(const c of n.children||[])visit(c,side); };
+      for(const index of json.scenes[json.scene||0].nodes)visit(index);
+    }
     const read = (id) => {
       const a = json.accessors[id], view = json.bufferViews[a.bufferView];
       const size = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[a.type];
       const T = { 5121: Uint8Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array }[a.componentType];
       return new T(buffer, binary + (view.byteOffset || 0) + (a.byteOffset || 0), a.count * size);
     };
-    for (const mesh of json.meshes) for (const primitive of mesh.primitives) {
+    for (const [meshIndex, mesh] of json.meshes.entries()) for (const primitive of mesh.primitives) {
       const pos = read(primitive.attributes.POSITION), nor = read(primitive.attributes.NORMAL);
       const indices = read(primitive.indices), base = body.pos.length / 3;
       const mat = json.materials[primitive.material], pbr = mat.pbrMetallicRoughness || {};
@@ -142,10 +148,34 @@
         body.vert([pos[i] * 1000, pos[i + 1] * 1000, pos[i + 2] * 1000], [nor[i], nor[i + 1], nor[i + 2]], 0);
         body.tint.push(...tint.slice(0, 3));
         body.finish.push(pbr.metallicFactor ?? 1, pbr.roughnessFactor ?? 1);
+        if (split) body.leaf.push(sides[meshIndex]);
       }
       for (const index of indices) body.idx.push(base + index);
     }
     return body;
+  }
+
+  let duoBase = null;
+  function buildDuo(angle, surface = 'inner') {
+    const D=root.DuoGeometry, body=new Mesh(), f=D.frame(angle,surface);
+    body.tint=[];body.finish=[];
+    if(modelBuffers.iphoneduo) {
+      duoBase ||= modelMesh(modelBuffers.iphoneduo,true);
+      for(let i=0;i<duoBase.pos.length;i+=3) {
+        const p=D.leafPose(duoBase.leaf[i/3],angle),point=D.rotate(duoBase.pos.slice(i,i+3),p.rotation).map((n,k)=>n+p.position[k]);
+        body.vert(D.orient(point,f),D.orient(D.rotate(duoBase.nor.slice(i,i+3),p.rotation),f,true),0);
+      }
+      body.idx=duoBase.idx.slice();body.tint=duoBase.tint.slice();body.finish=duoBase.finish.slice();
+    }
+    const back=D.buildScreen('inner',angle,surface,true).mesh,base=body.pos.length/3;
+    for(let i=0;i<back.pos.length;i+=3){body.vert(back.pos.slice(i,i+3),back.nor.slice(i,i+3),0);body.tint.push(.004,.004,.004);body.finish.push(0,1);}
+    for(let i=0;i<back.idx.length;i+=3){const a=base+back.idx[i],b=base+back.idx[i+1],c=base+back.idx[i+2];body.idx.push(a,b,c,c,b,a);}
+    const bounds=[[Infinity,Infinity,Infinity],[-Infinity,-Infinity,-Infinity]];
+    for(let i=0;i<body.pos.length;i++){const k=i%3;bounds[0][k]=Math.min(bounds[0][k],body.pos[i]);bounds[1][k]=Math.max(bounds[1][k],body.pos[i]);}
+    const corners=[];for(const x of [bounds[0][0],bounds[1][0]])for(const y of [bounds[0][1],bounds[1][1]])for(const z of [bounds[0][2],bounds[1][2]])corners.push([x,y,z]);
+    const sample=(key,u=.5,v=.5)=>{const p=D.surfaceFrame(key,u,v,angle);return {point:D.orient(p.point,f),normal:D.orient(p.normal,f,true),tangentU:D.orient(p.tangentU,f,true),tangentV:D.orient(p.tangentV,f,true)};};
+    const screens=['inner','outer'].map(key=>({...D.buildScreen(key,angle,surface),profile:root.DUO_DATA?.[key]||null,frame:sample(key),sample:(u,v)=>sample(key,u,v)}));
+    return {body,screens,spec:{W:164.6,H:117.8,T:5.2},corners,frame:f,surfaceFrame:sample};
   }
 
   function build(overrides, model) {
@@ -211,5 +241,5 @@
     return { body: model ? (modelBuffers[model] ? modelMesh(modelBuffers[model]) : new Mesh()) : body, screen, spec: s };
   }
 
-  root.Phone3D = { build, SPEC, MAT, loadModel, hasModel: (id) => !!modelBuffers[id] };
+  root.Phone3D = { build, buildDuo, SPEC, MAT, loadModel, hasModel: (id) => !!modelBuffers[id] };
 })(window);

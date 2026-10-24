@@ -8,6 +8,7 @@ import { mount, type MountOptions } from './app';
 declare global {
   interface Window {
     ANG_DATA: MountOptions['data'];
+    DUO_DATA?:MountOptions['duoData'];
     SCENE3D_PERSON: object;
     SCENE3D_IPHONE?: Record<string, string>;
     Phone3D: { loadModel: (id: string) => Promise<ArrayBuffer> };
@@ -41,6 +42,7 @@ function loadAppleIphone(variant: string, model?: string): Promise<ArrayBuffer |
 window.Scene3D = {
   mount: (host, extra = {}) => mount(host, {
     data: window.ANG_DATA,
+    duoData:window.DUO_DATA,
     person: window.SCENE3D_PERSON,
     makePattern: (n, w, h) => window.Patterns.make(n, w, h),
     appleIphone: loadAppleIphone,

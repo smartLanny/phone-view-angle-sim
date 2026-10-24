@@ -140,8 +140,15 @@ export function createDataPanel(host: HTMLElement, maxTheta: number) {
     get visible() { return !el.hidden; },
     setVisible(v: boolean) { el.hidden = !v; if (v) requestAnimationFrame(() => { pad.draw(); charts.render(); render(true); }); },
     update(profiles: PanelProfile[], eyes: PanelEye[], jMax: number, device: string) {
+      (el.querySelector('.s3d-data-body') as HTMLElement).style.display='';q('metric').style.display='';
+      el.querySelector('[data-d="empty"]')?.remove();
       last = { profiles, eyes, jMax, device };
       render();
+    },
+    updateEmpty(device:string,message:string){
+      last=null;lastKey='';q('dev').textContent=device;q('metric').style.display='none';(el.querySelector('.s3d-data-body') as HTMLElement).style.display='none';
+      let empty=el.querySelector('[data-d="empty"]') as HTMLElement|null;
+      if(!empty){empty=document.createElement('div');empty.dataset.d='empty';empty.className='s3d-derived';empty.style.padding='20px';el.appendChild(empty);}empty.textContent=message;
     },
   };
 }

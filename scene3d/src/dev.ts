@@ -7,14 +7,19 @@ import './legacy/patterns.js';
 import './legacy/viz.js';
 import { mount } from './app';
 import { loadAngData } from './optics/model';
+import type { DuoData } from './phone/duo';
 
 const q = new URLSearchParams(location.search);
 const host = document.getElementById('stage')!;
 const data = await loadAngData('./data/ang_data.js?v=20261008-mate90');
+await new Promise<void>((resolve,reject)=>{const script=document.createElement('script');script.src='./data/duo_data.js';script.onload=()=>resolve();script.onerror=reject;document.head.appendChild(script);});
+const duoData=(window as unknown as {DUO_DATA:DuoData}).DUO_DATA;
 await window.Patterns.ready;
 const app = await mount(host, {
   privacy: q.get('privacy') === '1',
   device: q.get('device') || undefined,
+  duoData,
+  fold:q.has('fold')?+q.get('fold')!:180,duoSurface:q.get('surface')==='outer'?'outer':'inner',
   // 本机的苹果官网模型（public/local/，不进仓库）；没有就用参数化模型
   appleIphone: q.get('apple') === '0' ? undefined : async (v, model) => {
     const r = await fetch(model ? `./models/${model}.glb` : `./local/phone_${v}.glb`);

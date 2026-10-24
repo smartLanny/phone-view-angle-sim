@@ -3,6 +3,7 @@
  * 各场景（presets.ts）用这些积木拼出完整姿势。坐标：人物面朝 +Z，右侧为 −X，单位米。
  */
 import * as THREE from 'three';
+import type { PhoneGrip } from './phone/grip';
 import { type Character, resetPose, rotateWorld, rotateLocal, aimY, setWorldQuat, solveTwoBone, eyeWorld, headAxes, worldPos, worldQuat } from './rig';
 
 const DEG = Math.PI / 180;
@@ -10,7 +11,7 @@ const X = new THREE.Vector3(1, 0, 0);
 const Z = new THREE.Vector3(0, 0, 1);
 
 /** 手机外形尺寸（米）：宽、高、厚；背面最大凸起（相机平台 + 镜头）与平台中心的 y */
-export interface PhoneDims { W: number; H: number; T: number; bump: number; islandY: number }
+export interface PhoneDims { W: number; H: number; T: number; bump: number; islandY: number; grip?: PhoneGrip }
 
 export interface SeatParams {
   seatHeight: number;
@@ -109,14 +110,14 @@ export const GRIP = { beta: 55, yaw: 42, dx: 0.028, dy: -0.020, dz: -0.024, tipO
 
 /** 右手相对手机的握持姿态（手机局部坐标）：手腕在右下角外后方，掌心贴背面并略朝左，四指斜向左上绕到左边框。 */
 function gripMatrix(d: PhoneDims) {
-  const beta = GRIP.beta * DEG, yaw = GRIP.yaw * DEG;
+  const beta = GRIP.beta * DEG, yaw = (d.grip ? -15 : GRIP.yaw) * DEG;
   const n = new THREE.Vector3(-Math.sin(yaw), 0, Math.cos(yaw));
   const Xh = n.clone().negate();
   const across = new THREE.Vector3(-Math.cos(yaw), 0, -Math.sin(yaw));
   const Yh = across.multiplyScalar(Math.cos(beta)).add(new THREE.Vector3(0, Math.sin(beta), 0)).normalize();
   const Zh = new THREE.Vector3().crossVectors(Xh, Yh);
   const m = new THREE.Matrix4().makeBasis(Xh, Yh, Zh);
-  m.setPosition(d.W / 2 + GRIP.dx, -d.H / 2 + GRIP.dy, -d.T + GRIP.dz);
+  m.setPosition(d.W / 2 + (d.grip ? .016 : GRIP.dx), -d.H / 2 + GRIP.dy, -d.T + (d.grip ? -.036 : GRIP.dz));
   return m;
 }
 
@@ -137,6 +138,10 @@ export function shareTwist(lower: THREE.Bone, hand: THREE.Bone, k = 0.5) {
 
 /** 右手握住手机（phone 为手机局部 → 世界矩阵）。返回手臂是否够得着。body：身体整体的朝向（侧卧时），用来摆肘部方向 */
 export function holdPhoneRight(c: Character, phone: THREE.Matrix4, d: PhoneDims, body?: THREE.Quaternion): boolean {
+  if (d.grip) {
+    phone = phone.clone().multiply(d.grip.frame);
+    d = { ...d, ...d.grip };
+  }
   const b = c.bones;
   const hand = phone.clone().multiply(gripMatrix(d));
   const wrist = new THREE.Vector3().setFromMatrixPosition(hand);
@@ -158,6 +163,28 @@ export function holdPhoneRight(c: Character, phone: THREE.Matrix4, d: PhoneDims,
   const ok = solveTwoBone(b.upperarm_r, b.lowerarm_r, b.hand_r, wrist, sh.clone().add(pole));
   setWorldQuat(b.hand_r, handQ);
   shareTwist(b.lowerarm_r, b.hand_r);
+
+  if (d.grip) {
+    const L = (p: THREE.Vector3) => p.applyMatrix4(phone);
+    const curl = (name: string, target: THREE.Vector3, knuckle: THREE.Vector3, pole: THREE.Vector3) => {
+      const first = b[`${name}_01_r`], second = b[`${name}_02_r`], third = b[`${name}_03_r`], tip = b[`${name}_04_leaf_r`];
+      aimY(first, L(knuckle).sub(worldPos(first)));
+      solveTwoBone(second, third, tip, L(target), L(pole));
+    };
+    const back = d.grip.fingerX > -d.W / 2;
+    for (const [name, y] of [['index', .036], ['middle', .012], ['ring', -.012]] as const) {
+      curl(name, new THREE.Vector3(d.grip.fingerX, y, d.grip.fingerZ),
+        new THREE.Vector3(back ? 0 : d.grip.fingerX, y, -d.T - .012),
+        new THREE.Vector3(d.grip.fingerX + (back ? .020 : -.020), y + .020, -d.T - .035));
+    }
+    curl('pinky', d.grip.pinky.clone(),
+      new THREE.Vector3(back ? 0 : d.grip.pinky.x, back ? -d.H / 2 + .025 : d.grip.pinky.y - .010, -d.T - (back ? .030 : .012)),
+      new THREE.Vector3(back ? -.010 : d.grip.pinky.x, back ? -d.H / 2 + .025 : -d.H / 2 - .035, -d.T - .040));
+    curl('thumb', d.grip.thumb.clone(),
+      new THREE.Vector3(d.W / 2 + .018, .020, -d.T - .016),
+      new THREE.Vector3(d.W / 2 + .038, 0, -d.T - .038));
+    return ok;
+  }
 
   // 手指按目标点摆：第一节指向左边框背面外侧，后两节指向左边框上的落点；指尖不进入屏幕前方
   const L = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyMatrix4(phone);
