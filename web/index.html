@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>可视角度仿真</title>
-<link rel="stylesheet" href="style.css?v=20261024-duo">
+<link rel="stylesheet" href="style.css?v=20261025-ui-slim">
 </head>
 <body data-layout="wide">
 <div class="sframe" id="sf0"></div>
@@ -34,6 +34,10 @@
 <aside id="rail" aria-label="视角"></aside>
 
 <aside id="panel" aria-label="设置">
+  <!-- 手机竖屏：常驻的把手 + 离轴角滑块，设置内容默认收起，把画面留给手机 -->
+  <div id="quick">
+    <button id="grab" aria-label="展开 / 收起设置" aria-expanded="false"><span></span></button>
+  </div>
   <nav id="tabs" role="tablist">
     <button data-tab="view" class="on" role="tab">视角</button>
     <button data-tab="device" role="tab">机型</button>
@@ -63,13 +67,12 @@
             </div>
             <select id="palette" class="mini-select" aria-label="热力图配色" title="热力图配色（方向盘与离轴角分布共用）"></select>
           </div>
-          <div class="angle-row">
-            <div class="chips" id="thetaChips">
-              <button data-t="0">0°</button>
-              <button data-t="30">30°</button>
-              <button data-t="45">45°</button>
-              <button data-t="60">60°</button>
-              <button data-t="70">70°</button>
+          <!-- 离轴角滑块：宽屏在方向盘下方，手机竖屏时移到底部常驻栏（见 app.js applyLayout） -->
+          <div class="angle-row" id="angleRow">
+            <div class="theta-ctl">
+              <div class="row-title"><span>离轴角</span><b id="thetaV">0°</b></div>
+              <input type="range" id="theta" min="0" max="70" step="1" value="0" list="thetaTicks" aria-label="离轴角">
+              <datalist id="thetaTicks"><option value="0"></option><option value="30"></option><option value="45"></option><option value="60"></option><option value="70"></option></datalist>
             </div>
             <button id="sweep" class="play" title="自动扫描 0°→70°（空格）"><span class="ico"></span><span class="lbl">扫描</span></button>
           </div>
@@ -111,10 +114,12 @@
     </section>
 
     <section class="sec" data-tab="device" id="secSlots" hidden>
-      <h2>对比组合</h2>
-      <div class="chips" id="presets"></div>
-      <label class="slot"><span class="key" style="--k:var(--s1)"></span><select id="slot0" aria-label="左侧"></select></label>
-      <label class="slot"><span class="key" style="--k:var(--s2)"></span><select id="slot1" aria-label="右侧"></select></label>
+      <div class="sec-head">
+        <h2>对比</h2>
+        <button id="swapSlots" class="mini-btn" title="左右互换">⇄ 互换</button>
+      </div>
+      <label class="slot"><span class="slot-side">左</span><span class="key" style="--k:var(--s1)"></span><select id="slot0" aria-label="左侧"></select></label>
+      <label class="slot"><span class="slot-side">右</span><span class="key" style="--k:var(--s2)"></span><select id="slot1" aria-label="右侧"></select></label>
     </section>
 
     <section class="sec" data-tab="device" id="secFold" hidden>
@@ -125,11 +130,6 @@
       </div>
       <div class="row-title fold-title"><span>折叠角度</span><b id="foldV">180°</b></div>
       <input type="range" id="fold" min="0" max="180" step="1" value="180" aria-label="折叠角度">
-      <div class="chips" id="foldPresets">
-        <button data-angle="0">闭合</button>
-        <button data-angle="90">半开</button>
-        <button data-angle="180" class="on">展开</button>
-      </div>
       <p class="note" id="duoStatus">内外屏可视角数据待测，当前显示原图。</p>
     </section>
 
@@ -228,6 +228,6 @@
 <script src="phone3d.js?v=20261025-duo-ui"></script>
 <script src="viz.js?v=20261024-duo"></script>
 <!-- 三维场景（scene3d-person.js、scene3d.js）只在进入场景演示时再加载，见 app.js -->
-<script src="app.js?v=20261025-duo-ui"></script>
+<script src="app.js?v=20261025-ui-slim"></script>
 </body>
 </html>
