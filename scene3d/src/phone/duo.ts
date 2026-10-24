@@ -37,18 +37,18 @@ export async function buildDuoPhone(spec:DeviceSpec,buffer:ArrayBuffer,angle:num
   });
   const black=new THREE.MeshBasicMaterial({color:'#020304',side:THREE.DoubleSide});
   const backing=new THREE.Mesh(new THREE.BufferGeometry(),black);backing.frustumCulled=false;group.add(backing);
-  let fold=angle,selected=surface;
+  let fold=angle,selected=surface,frameMix=surface==='outer'?1:0;
   const phone:PhoneModel={group,screen:surfaces.find(s=>s.key===surface)!.screen,spec,half:new THREE.Vector2(),source:'apple',screens:surfaces,setColor(){},
-    setFold(a,s){
-      fold=a;selected=s;
+    setFold(a,s,mix=s==='outer'?1:0){
+      fold=a;selected=s;frameMix=mix;
       for(const [leaf,side] of [[left,-1],[right,1]] as const){const p=D.leafPose(side,a);leaf.rotation.y=p.rotation;leaf.position.set(...p.position.map((n:number)=>n/1000) as [number,number,number]);}
-      const f=D.frame(a,s),origin=new THREE.Vector3(...f.origin as [number,number,number]).multiplyScalar(.001).applyAxisAngle(new THREE.Vector3(0,1,0),f.rotation);
+      const f=D.frame(a,s,mix),origin=new THREE.Vector3(...f.origin as [number,number,number]).multiplyScalar(.001).applyAxisAngle(new THREE.Vector3(0,1,0),f.rotation);
       display.rotation.y=f.rotation;display.position.copy(origin).negate();
-      for(const item of surfaces){item.screen.geometry.dispose();item.screen.geometry=geometry(D.buildScreen(item.key,a,s).mesh);}
-      backing.geometry.dispose();backing.geometry=geometry(D.buildScreen('inner',a,s,true).mesh);
+      for(const item of surfaces){item.screen.geometry.dispose();item.screen.geometry=geometry(D.buildScreen(item.key,a,s,false,mix).mesh);}
+      backing.geometry.dispose();backing.geometry=geometry(D.buildScreen('inner',a,s,true,mix).mesh);
       const active=surfaces.find(item=>item.key===s)!;phone.screen=active.screen;phone.half.copy(active.half);
     },
-    surfaceFrame(s,u,v){const p=D.surfaceFrame(s,u,v,fold),f=D.frame(fold,selected);return {point:D.orient(p.point,f).map((n:number)=>n/1000),normal:D.orient(p.normal,f,true),tangentU:D.orient(p.tangentU,f,true),tangentV:D.orient(p.tangentV,f,true)};},
+    surfaceFrame(s,u,v){const p=D.surfaceFrame(s,u,v,fold),f=D.frame(fold,selected,frameMix);return {point:D.orient(p.point,f).map((n:number)=>n/1000),normal:D.orient(p.normal,f,true),tangentU:D.orient(p.tangentU,f,true),tangentV:D.orient(p.tangentV,f,true)};},
     dispose(){group.traverse(o=>{const m=o as THREE.Mesh;if(!m.isMesh)return;m.geometry.dispose();for(const mat of ([] as THREE.Material[]).concat(m.material)){for(const v of Object.values(mat))if(v&&(v as THREE.Texture).isTexture)(v as THREE.Texture).dispose();mat.dispose();}});},
   };
   phone.setFold!(angle,surface);return phone;

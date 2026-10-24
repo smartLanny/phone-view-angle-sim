@@ -10,11 +10,11 @@ export interface PhoneGrip {
 }
 
 /** 始终握住右侧刚性叶片，开合时随叶片转动，不把两叶包围盒当作掌宽。 */
-export function duoGrip(angle: number, surface: 'inner' | 'outer'): PhoneGrip {
+export function duoGrip(angle: number, surface: 'inner' | 'outer', mix?: number): PhoneGrip {
   const D = window.DuoGeometry;
   const fold = THREE.MathUtils.clamp(angle, 0, 180);
   const side = 1;
-  const leaf = D.leafPose(side, fold), display = D.frame(fold, surface);
+  const leaf = D.leafPose(side, fold), display = D.frame(fold, surface, mix);
   const center = D.rotate([41.2267335, 0.123715, 0], leaf.rotation)
     .map((n: number, i: number) => n + leaf.position[i]);
   const position = new THREE.Vector3(...D.orient(center, display) as [number, number, number]).multiplyScalar(.001);

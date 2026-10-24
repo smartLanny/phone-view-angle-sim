@@ -156,25 +156,31 @@
   }
 
   let duoBase = null;
-  function buildDuo(angle, surface = 'inner') {
-    const D=root.DuoGeometry, body=new Mesh(), f=D.frame(angle,surface);
+  function buildDuo(angle, surface = 'inner', mix) {
+    const D=root.DuoGeometry, body=new Mesh(), f=D.frame(angle,surface,mix);
     body.tint=[];body.finish=[];
     if(modelBuffers.iphoneduo) {
       duoBase ||= modelMesh(modelBuffers.iphoneduo,true);
+      const transforms={};
+      for(const side of [-1,0,1]){
+        const p=D.leafPose(side,angle),a=p.rotation+f.rotation;
+        transforms[side]={c:Math.cos(a),s:Math.sin(a),t:D.orient(p.position,f)};
+      }
       for(let i=0;i<duoBase.pos.length;i+=3) {
-        const p=D.leafPose(duoBase.leaf[i/3],angle),point=D.rotate(duoBase.pos.slice(i,i+3),p.rotation).map((n,k)=>n+p.position[k]);
-        body.vert(D.orient(point,f),D.orient(D.rotate(duoBase.nor.slice(i,i+3),p.rotation),f,true),0);
+        const {c,s,t}=transforms[duoBase.leaf[i/3]],p=duoBase.pos,n=duoBase.nor;
+        body.vert([c*p[i]+s*p[i+2]+t[0],p[i+1]+t[1],-s*p[i]+c*p[i+2]+t[2]],
+          [c*n[i]+s*n[i+2],n[i+1],-s*n[i]+c*n[i+2]],0);
       }
       body.idx=duoBase.idx.slice();body.tint=duoBase.tint.slice();body.finish=duoBase.finish.slice();
     }
-    const back=D.buildScreen('inner',angle,surface,true).mesh,base=body.pos.length/3;
+    const back=D.buildScreen('inner',angle,surface,true,mix).mesh,base=body.pos.length/3;
     for(let i=0;i<back.pos.length;i+=3){body.vert(back.pos.slice(i,i+3),back.nor.slice(i,i+3),0);body.tint.push(.004,.004,.004);body.finish.push(0,1);}
     for(let i=0;i<back.idx.length;i+=3){const a=base+back.idx[i],b=base+back.idx[i+1],c=base+back.idx[i+2];body.idx.push(a,b,c,c,b,a);}
     const bounds=[[Infinity,Infinity,Infinity],[-Infinity,-Infinity,-Infinity]];
     for(let i=0;i<body.pos.length;i++){const k=i%3;bounds[0][k]=Math.min(bounds[0][k],body.pos[i]);bounds[1][k]=Math.max(bounds[1][k],body.pos[i]);}
     const corners=[];for(const x of [bounds[0][0],bounds[1][0]])for(const y of [bounds[0][1],bounds[1][1]])for(const z of [bounds[0][2],bounds[1][2]])corners.push([x,y,z]);
     const sample=(key,u=.5,v=.5)=>{const p=D.surfaceFrame(key,u,v,angle);return {point:D.orient(p.point,f),normal:D.orient(p.normal,f,true),tangentU:D.orient(p.tangentU,f,true),tangentV:D.orient(p.tangentV,f,true)};};
-    const screens=['inner','outer'].map(key=>({...D.buildScreen(key,angle,surface),profile:root.DUO_DATA?.[key]||null,frame:sample(key),sample:(u,v)=>sample(key,u,v)}));
+    const screens=['inner','outer'].map(key=>({...D.buildScreen(key,angle,surface,false,mix),profile:root.DUO_DATA?.[key]||null,frame:sample(key),sample:(u,v)=>sample(key,u,v)}));
     return {body,screens,spec:{W:164.6,H:117.8,T:5.2},corners,frame:f,surfaceFrame:sample};
   }
 

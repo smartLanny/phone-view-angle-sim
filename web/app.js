@@ -45,6 +45,8 @@
     padMetric: 'lum', pal: 'jet', tab: 'view', clean: false, sweep: null,
   };
 
+  let surfaceMix=0;
+
   // 缺失方位用上下镜像补全（见 model.js 'vmirror'）
   const models = {};
   const getModel = (id) => !byId(id).sets ? null : models[id] ||
@@ -138,7 +140,8 @@
   }
   function dev(name, surface = S.duoSurface) {
     const duo = name === 'iPhone Duo', key = duo ? `${name}|${surface}` : name;
-    if (devCache[key] && (!duo || devCache[key].fold === S.fold)) return devCache[key];
+    const mix=duo&&!S.compare?surfaceMix:undefined;
+    if (devCache[key] && (!duo || (devCache[key].fold === S.fold && devCache[key].frameMix === mix))) return devCache[key];
     if (devCache[key]) dropDev(key);
     const spec = specOf(name);
     if (spec.model && !Phone3D.hasModel(spec.model) && !pendingModels.has(spec.model) && !failedModels.has(spec.model)) {
@@ -151,7 +154,7 @@
         toast(err.message);
       }).finally(() => pendingModels.delete(spec.model));
     }
-    const phone = duo ? Phone3D.buildDuo(S.fold, surface) : Phone3D.build(spec.body, spec.model);
+    const phone = duo ? Phone3D.buildDuo(S.fold, surface, mix) : Phone3D.build(spec.body, spec.model);
     const P = phone.spec, sc = duo ? spec.screens[surface] : spec.screen;
     const ratio = sc.resH / sc.resW;
     const w = (sc.diag * 25.4) / Math.sqrt(1 + ratio * ratio);
@@ -159,7 +162,7 @@
     if (!phone.corners) for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const z of [0, -P.T]) corners.push([sx * P.W / 2, sy * P.H / 2, z]);
     const screens = duo ? phone.screens : [{ mesh: phone.screen, screenHalf: sc.half || [w / 2, (w * ratio) / 2], corner: sc.corner, cutout: spec.cutout, holes: sc.holes }];
     return (devCache[key] = {
-      name, spec, corners, fold: S.fold, surface,
+      name, spec, corners, fold: S.fold, surface, frameMix:mix,
       screenHalf: sc.half || [w / 2, (w * ratio) / 2],
       body: meshVAO(bodyProg, phone.body, true),
       surfaceFrame: phone.surfaceFrame,
@@ -701,7 +704,8 @@
   }
 
   const imgTex = gl.createTexture();
-  function setImage(src) {
+  const duoPatterns={};
+  function uploadImage(tex,src) {
     const maxSide = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), 4096);
     const k = Math.min(1, maxSide / Math.max(src.width, src.height));
     if (k < 1) {
@@ -710,9 +714,8 @@
       cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
       src = cv;
     }
-    image = src;
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, imgTex);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
@@ -722,13 +725,17 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return src;
+  }
+  function setImage(src) {
+    image=uploadImage(imgTex,src);
     requestRender();
   }
 
   /** 按“铺满”方式把图片映射到屏幕：返回 uv 缩放。 */
-  function imgScale(d) {
+  function imgScale(d,src=image) {
     const [dw, dh] = dispMM(d);
-    const ia = image ? image.width / image.height : dw / dh, da = dw / dh;
+    const ia = src ? src.width / src.height : dw / dh, da = dw / dh;
     return ia > da ? [da / ia, 1] : [1, ia / da];
   }
 
@@ -817,7 +824,9 @@
           gl.uniform3f(screenProg.u[`uHole${h}`], hole ? hole[0] : 0, hole ? screen.screenHalf[1] - hole[1] : 0, hole ? hole[2] : 0);
         }
         gl.uniform2fv(screenProg.u.uDispMM, dispMM(screen));
-        gl.uniform2fv(screenProg.u.uImgScale, imgScale(screen));
+        const pattern=S.pattern&&screen.key?duoPatterns[screen.key]:null;
+        gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,pattern?.tex||imgTex);
+        gl.uniform2fv(screenProg.u.uImgScale, imgScale(screen,pattern?.image||image));
         gl.uniform1i(screenProg.u.uLutW, bindLUT(id));
         gl.bindVertexArray(screen.screen.vao);
         setCommon(screenProg, M, v);
@@ -1356,7 +1365,7 @@
   });
 
   function syncProfileUI() {
-    stopFoldAnimation();
+    stopFoldAnimation(true);
     const showPriv = !S.compare && hasPrivacy(S.device);
     $('privacyRow').hidden = !showPriv;
     $('privacyText').textContent = privacyText(S.device).switch;
@@ -1397,26 +1406,30 @@
     $('duoStatus').textContent = missing ? `${missing}可视角数据待测，当前显示原图。` : DUO_NOTE + '。';
   }
   let foldAnimation=null;
-  function stopFoldAnimation() {
+  function stopFoldAnimation(finishMix=false) {
     if(foldAnimation)cancelAnimationFrame(foldAnimation.raf);
     foldAnimation=null;
+    if(finishMix&&surfaceMix!==(S.duoSurface==='outer'?1:0))setFold(S.fold);
   }
   function setFold(angle,animated=false) {
     stopFoldAnimation();
     stopSweep();
-    const target=Math.min(180,Math.max(0,+angle));
-    const apply=(value)=>{S.fold=value;syncFoldUI();requestRender();};
-    if(!animated||target===S.fold){apply(target);return;}
-    const tween=foldAnimation={from:S.fold,to:target,t0:performance.now(),raf:0};
+    const target=Math.min(180,Math.max(0,+angle)),toMix=S.duoSurface==='outer'?1:0;
+    const apply=(value,mix)=>{S.fold=value;surfaceMix=mix;syncFoldUI();requestRender();};
+    if(!animated)apply(target,surfaceMix);
+    if(target===S.fold&&toMix===surfaceMix){apply(target,toMix);return;}
+    const tween=foldAnimation={from:S.fold,fromMix:surfaceMix,t0:performance.now(),dur:animated?800:250,raf:0};
     const step=(now)=>{
       if(foldAnimation!==tween)return;
-      const k=Math.min(1,(now-tween.t0)/800),e=k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2;
-      apply(tween.from+(tween.to-tween.from)*e);
+      const k=Math.min(1,(now-tween.t0)/tween.dur),e=k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2;
+      apply(tween.from+(target-tween.from)*e,tween.fromMix+(toMix-tween.fromMix)*e);
       if(k<1)tween.raf=requestAnimationFrame(step);else foldAnimation=null;
     };
     tween.raf=requestAnimationFrame(step);
   }
-  bindSeg('duoSurface', (v) => { S.duoSurface = v; syncProfileUI(); requestRender(); });
+  bindSeg('duoSurface', (v) => {
+    S.duoSurface=v;syncProfileUI();setFold(v==='outer'?0:180,true);
+  });
   $('fold').addEventListener('input', (e) => setFold(e.target.value));
   $('foldPresets').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setFold(b.dataset.angle,true); });
   bindSeg('compare', (v) => { S.compare = v === '1'; S.stereo = v === '2'; retryFailedModels(); syncProfileUI(); requestRender(); });
@@ -1431,13 +1444,26 @@
     const p = byId(activeIds()[0]), spec = specOf(p.device);
     const sc = p.surface ? spec.screens[p.surface] : spec.screen;
     const w = S.rot === 90 ? sc.resH : sc.resW, h = S.rot === 90 ? sc.resW : sc.resH;
-    const key = `${name}:${w}x${h}`;
+    const ordinary=activeIds().map(byId).find((profile)=>!profile.surface);
+    const normalScreen=ordinary?specOf(ordinary.device).screen:null;
+    const nw=normalScreen?(S.rot===90?normalScreen.resH:normalScreen.resW):0,nh=normalScreen?(S.rot===90?normalScreen.resW:normalScreen.resH):0;
+    const key = `${name}:${w}x${h}:${hasDuo()?'duo':''}:${nw}x${nh}`;
     S.pattern = name;
     document.querySelectorAll('#patterns [data-p]').forEach((b) => b.classList.toggle('on', b.dataset.p === name));
     document.querySelector('#patterns .upload').classList.remove('on');
     if (key === patternKey && !force) return;
     patternKey = key;
-    setImage(Patterns.make(name, w, h));
+    Object.values(duoPatterns).forEach((p)=>gl.deleteTexture(p.tex));
+    for(const surface of Object.keys(duoPatterns))delete duoPatterns[surface];
+    if(hasDuo()){
+      for(const [surface,screen] of Object.entries(SPECS['iPhone Duo'].screens)){
+        const rw=S.rot===90?screen.resH:screen.resW,rh=S.rot===90?screen.resW:screen.resH;
+        const tex=gl.createTexture(),src=Patterns.make(name,rw,rh,`duo-${surface}`);
+        duoPatterns[surface]={tex,image:uploadImage(tex,src)};
+      }
+    }
+    if(ordinary)setImage(Patterns.make(name,nw,nh));
+    else{image=duoPatterns[p.surface].image;requestRender();}
   }
   async function loadFile(file) {
     if (!file || !file.type.startsWith('image/')) return;
@@ -1510,6 +1536,7 @@
     S.rot = num('rot', 0) === 90 ? 90 : 0;
     S.fold = Math.min(180, Math.max(0, num('fold', 180)));
     S.duoSurface = q.get('ds') === 'outer' ? 'outer' : 'inner';
+    surfaceMix=S.duoSurface==='outer'?1:0;
     if (q.get('k') === 'jncd') S.padMetric = 'jncd';
     if (Viz.PALETTES[q.get('pal')]) S.pal = q.get('pal');
     appMode = /^(3d|scene)$/.test(q.get('mode') || '') ? 'scene' : 'sim';
@@ -1519,7 +1546,7 @@
 
   // ---------- 模式：屏幕仿真（默认，本页原有工具）/ 场景演示（三维，scene3d.js，做动画用，从“画面 → 更多”进入） ----------
   let appMode = 'sim', scene3d = null, scene3dLoading = null;
-  const S3D_VER = 9;
+  const S3D_VER = 10;
   const loadScript = (src) => new Promise((res, rej) => {
     const s = document.createElement('script');
     s.src = src; s.onload = res; s.onerror = () => rej(new Error('无法加载 ' + src));
@@ -1534,6 +1561,7 @@
     syncSeg('appMode', m);
     if (m === 'scene') {
       stopFoldAnimation();
+      surfaceMix = S.duoSurface === 'outer' ? 1 : 0;
       stopSweep();
       if (scene3d) scene3d.resume();
       else if (!scene3dLoading) {

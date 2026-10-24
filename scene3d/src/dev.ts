@@ -27,7 +27,7 @@ const app = await mount(host, {
   },
   data,
   person: './models/ubc/Superhero_Male_FullBody.gltf',
-  makePattern: (n, w, h) => window.Patterns.make(n, w, h),
+  makePattern: (n, w, h, layout) => window.Patterns.make(n, w, h, layout),
   scene: q.get('scene') || undefined,
   view: q.get('view') === 'stereo' ? 'eye' : (q.get('view') as 'eye' | 'explain') || undefined,
   pattern: q.get('pattern') || undefined,

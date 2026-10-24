@@ -44,7 +44,7 @@ window.Scene3D = {
     data: window.ANG_DATA,
     duoData:window.DUO_DATA,
     person: window.SCENE3D_PERSON,
-    makePattern: (n, w, h) => window.Patterns.make(n, w, h),
+    makePattern: (n, w, h, layout) => window.Patterns.make(n, w, h, layout),
     appleIphone: loadAppleIphone,
     ...extra,
   }),

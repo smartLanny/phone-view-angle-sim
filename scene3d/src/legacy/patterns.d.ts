@@ -2,7 +2,7 @@
 export {};
 declare global {
   interface Window {
-    Patterns: { make(name: string, w: number, h: number): HTMLCanvasElement; ready: Promise<void> };
+    Patterns: { make(name: string, w: number, h: number, layout?: string): HTMLCanvasElement; ready: Promise<void> };
     AVATAR_SRC?: string;
   }
 }

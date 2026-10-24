@@ -280,6 +280,127 @@
     roundRect(g, W / 2 - 17 * u, H - 3.2 * u, 34 * u, 1.3 * u, 0.65 * u); g.fill();
   }
 
+  /** Duo 的设置侧栏按正常行高滚动，搜索固定在侧栏底部。 */
+  function duoSettings(g, width, height, c, top) {
+    g.fillStyle = c.pane; g.fillRect(0, 0, width, height);
+    g.fillStyle = c.text; g.font = `700 28px ${FONT}`; g.fillText('设置', 20, top + 38);
+    g.save(); g.beginPath(); g.rect(0, top + 66, width, height - top - 66); g.clip();
+    const ay = top + 124, ar = 26;
+    g.save(); g.beginPath(); g.arc(46, ay, ar, 0, Math.PI * 2); g.clip();
+    if (avatar.naturalWidth) g.drawImage(avatar, 20, ay - ar, 2 * ar, 2 * ar);
+    else { g.fillStyle = '#9aa0ac'; g.fill(); }
+    g.restore();
+    g.fillStyle = c.text; g.font = `600 18px ${FONT}`; g.fillText('野生的装机宅', 84, ay - 12);
+    g.fillStyle = c.sub; g.font = `400 13.5px ${FONT}`; g.fillText('@bilibili', 84, ay + 16);
+
+    const items = [
+      ['search', '#007aff', '搜索与 Siri', top + 210],
+      ['gear', '#8e8e93', '通用', top + 276],
+      ['person', '#007aff', '辅助功能', top + 324],
+      ['sun', '#1c1c1e', '外观', top + 372],
+      ['grid', '#007aff', '主屏幕与 App 资源库', top + 420],
+      ['search', '#8e8e93', '搜索', top + 468],
+      ['moon', '#56565e', 'Siri', top + 516],
+      ['grid', '#18181b', '待机显示', top + 564],
+      ['hourglass', '#5856d6', '屏幕使用时间', top + 612],
+      ['bell', '#ff3b30', '通知', top + 660],
+      ['sound', '#ff2d55', '声音与触感', top + 708],
+    ];
+    for (const [icon, color, label, cy] of items) {
+      if (label === '通用') {
+        g.fillStyle = c.selected; roundRect(g, 12, cy - 22, width - 24, 44, 22); g.fill();
+      }
+      g.fillStyle = color; roundRect(g, 24, cy - 13, 26, 26, 6); g.fill();
+      glyph(g, icon, 37, cy, 26, color);
+      g.fillStyle = c.text; g.font = `400 17px ${FONT}`; g.fillText(label, 62, cy);
+    }
+    g.restore();
+
+    const fade = g.createLinearGradient(0, height - 90, 0, height);
+    fade.addColorStop(0, c.fade); fade.addColorStop(1, c.pane);
+    g.fillStyle = fade; g.fillRect(0, height - 90, width, 90);
+    const searchY = height - 62;
+    g.save(); g.shadowColor = 'rgba(0,0,0,.12)'; g.shadowBlur = 12; g.shadowOffsetY = 3;
+    g.fillStyle = c.float; roundRect(g, 16, searchY, width - 32, 44, 22); g.fill(); g.restore();
+    g.strokeStyle = c.line; g.lineWidth = .5; roundRect(g, 16, searchY, width - 32, 44, 22); g.stroke();
+    glyph(g, 'search', 38, searchY + 22, 21, c.float, c.sub);
+    g.fillStyle = c.sub; g.font = `400 17px ${FONT}`; g.fillText('搜索', 58, searchY + 22);
+    const mx = width - 38, my = searchY + 21;
+    g.strokeStyle = c.sub; g.lineWidth = 1.7; g.lineCap = 'round';
+    roundRect(g, mx - 3, my - 7, 6, 11, 3); g.stroke();
+    g.beginPath(); g.arc(mx, my - 2, 6, 0, Math.PI); g.stroke();
+    g.beginPath(); g.moveTo(mx, my + 4); g.lineTo(mx, my + 8); g.stroke();
+  }
+
+  /** 依据 Duo 的分栏与侧边系统控制轨；普通手机仍调用原 ui()。 */
+  function duoUi(g, W, H, dark, inner) {
+    const s = Math.min(W, H) / (inner ? 669 : 466), w = W / s, h = H / s;
+    const horizontal = inner && H > W, rail = horizontal ? 0 : 96;
+    const c = dark
+      ? { bg: '#000', pane: '#111113', card: '#1c1c1e', text: '#f5f5f7', sub: '#929298', line: '#38383b', chev: '#68686e', selected: '#343438', float: '#28282b', fade: 'rgba(17,17,19,0)' }
+      : { bg: '#f2f2f7', pane: '#fff', card: '#fff', text: '#111', sub: '#8a8a8e', line: '#d5d5da', chev: '#bcbcc2', selected: '#e8e8ed', float: '#fff', fade: 'rgba(255,255,255,0)' };
+    g.save(); g.scale(s, s); g.textBaseline = 'middle';
+    g.fillStyle = c.bg; g.fillRect(0, 0, w, h);
+    const top = horizontal ? 34 : 0, appWidth = w - rail;
+    const split = inner ? Math.max(horizontal ? 248 : 0, w * .31) : 0;
+    if (inner) duoSettings(g, split, h, c, top);
+    if (horizontal) statusBar(g, w, 3, c.text);
+
+    const x = split + 20, width = appWidth - split - 40, right = x + width;
+    const heroY = 84 + top, heroH = width < 450 ? 212 : 184;
+    g.save(); g.beginPath(); g.rect(split, top, appWidth - split, h - top); g.clip();
+    g.fillStyle = c.card; roundRect(g, x, heroY, width, heroH, 18); g.fill();
+    g.fillStyle = '#8e8e93'; roundRect(g, x + 20, heroY + 20, 52, 52, 13); g.fill();
+    glyph(g, 'gear', x + 46, heroY + 46, 52, '#8e8e93');
+    g.fillStyle = c.text; g.font = `600 24px ${FONT}`; g.fillText('通用', x + 20, heroY + 106);
+    g.fillStyle = c.sub; g.font = `400 15px ${FONT}`;
+    let line = '', lineY = heroY + 140;
+    for (const ch of '管理 iPhone 的设置与偏好，包括软件更新、设备语言、CarPlay、隔空投送等。') {
+      if (g.measureText(line + ch).width > width - 40) { g.fillText(line, x + 20, lineY); lineY += 21; line = ''; }
+      line += ch;
+    }
+    if (line) g.fillText(line, x + 20, lineY);
+
+    const group = (y, rows) => {
+      g.fillStyle = c.card; roundRect(g, x, y, width, rows.length * 52, 15); g.fill();
+      rows.forEach(([icon, color, label], i) => {
+        const cy = y + i * 52 + 26;
+        g.fillStyle = color; roundRect(g, x + 16, cy - 13, 26, 26, 6); g.fill();
+        glyph(g, icon, x + 29, cy, 26, color);
+        g.fillStyle = c.text; g.font = `400 17px ${FONT}`; g.fillText(label, x + 54, cy);
+        chevron(g, right - 17, cy, 1.8, c.chev);
+        if (i < rows.length - 1) { g.fillStyle = c.line; g.fillRect(x + 54, y + (i + 1) * 52, width - 54, .5); }
+      });
+    };
+    let y = heroY + heroH + 28;
+    group(y, [['gear', '#8e8e93', '关于本机']]); y += 80;
+    group(y, [['grid', '#007aff', '健康数据'], ['camera', '#8e8e93', '照片图库']]); y += 132;
+    group(y, [['camera', '#8e8e93', '屏幕捕捉']]); y += 80;
+    group(y, [['gear', '#8e8e93', '自动填充与密码']]); y += 80;
+    group(y, [['gear', '#8e8e93', '日期与时间'], ['toggles', '#8e8e93', '键盘'], ['gear', '#8e8e93', '语言与地区']]);
+    g.restore();
+
+    if (!horizontal) {
+      const cx = w - 48, timeY = inner ? 24 : 96, cy = inner ? 60 : 128;
+      // 外屏相机中心约为 (w - 48, 48)，顶部区域留给物理相机。
+      g.fillStyle = c.text; g.font = `600 12px ${FONT}`; g.textAlign = 'center';
+      g.fillText('9:41', cx, timeY); g.textAlign = 'left';
+      g.fillStyle = c.float; g.beginPath(); g.arc(cx, cy, 18, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = c.line; g.lineWidth = .7; g.stroke();
+      g.strokeStyle = c.text; g.lineWidth = 1.8;
+      g.beginPath(); g.arc(cx, cy, 11, -.85 * Math.PI, .85 * Math.PI); g.stroke();
+      glyph(g, 'battery', cx, cy, 14, c.float, c.text);
+      if (!inner) {
+        const by = 190;
+        g.save(); g.shadowColor = 'rgba(0,0,0,.08)'; g.shadowBlur = 6; g.shadowOffsetY = 2;
+        g.fillStyle = c.float; g.beginPath(); g.arc(cx, by, 22, 0, Math.PI * 2); g.fill(); g.restore();
+        g.strokeStyle = c.text; g.lineWidth = 2.3; g.lineCap = g.lineJoin = 'round';
+        g.beginPath(); g.moveTo(cx + 3, by - 7); g.lineTo(cx - 4, by); g.lineTo(cx + 3, by + 7); g.stroke();
+      }
+    }
+    g.restore();
+  }
+
   /** 阅读页：大小字号、浅灰卡片、蓝色链接混排，用来看大角度下文字还认不认得出。 */
   const READ = [
     ['h', '周末出行计划'],
@@ -380,7 +501,7 @@
     });
   }
 
-  function make(name, W, H) {
+  function make(name, W, H, layout) {
     const cv = document.createElement('canvas');
     cv.width = W; cv.height = H;
     const g = cv.getContext('2d');
@@ -390,9 +511,14 @@
       case 'gray': gray(g, W, H); break;
       case 'checker': checker(g, W, H); break;
       case 'rgbw': rgbw(g, W, H); break;
-      case 'dark': ui(g, W, H, true); break;
+      case 'dark':
+        if (layout === 'duo-inner' || layout === 'duo-outer') duoUi(g, W, H, true, layout === 'duo-inner');
+        else ui(g, W, H, true);
+        break;
       case 'read': read(g, W, H, false); break;
-      default: ui(g, W, H, false);
+      default:
+        if (layout === 'duo-inner' || layout === 'duo-outer') duoUi(g, W, H, false, layout === 'duo-inner');
+        else ui(g, W, H, false);
     }
     return cv;
   }

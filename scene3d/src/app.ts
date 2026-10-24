@@ -29,7 +29,7 @@ import { CSS } from './ui-css';
 export interface MountOptions {
   data: AngData;
   person: string | object;                     // glTF 地址或内嵌的 glTF JSON
-  makePattern: (name: string, w: number, h: number) => HTMLCanvasElement;
+  makePattern: (name: string, w: number, h: number, layout?: string) => HTMLCanvasElement;
   scene?: string;
   view?: ViewMode;
   pattern?: string;
@@ -164,6 +164,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   // ---------- 手机与实测模型 ----------
   let device: DeviceSpec = DEVICES.find((d) => d.id === opts.device) || DEVICES[0];
   let fold=opts.fold??180,duoSurface:DuoSurface=opts.duoSurface||'inner',displayMode=0;
+  let surfaceMix=duoSurface==='outer'?1:0;
   const colorOf: Record<string, string> = {};
   /** 建手机模型：iPhone 优先用苹果官网模型（本机有的话），否则参数化建模 */
   const makePhone = async (d: DeviceSpec): Promise<PhoneModel> => {
@@ -187,7 +188,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const dimsOf = (d: DeviceSpec) => ({
     W: d.body.W / 1000, H: d.body.H / 1000, T: d.body.T / 1000,
     bump: rearBump(d.body) / 1000, islandY: islandCenterY(d.body) / 1000,
-    grip: d.foldable ? duoGrip(fold,duoSurface) : undefined,
+    grip: d.foldable ? duoGrip(fold,duoSurface,surfaceMix) : undefined,
   });
   const ctx: Ctx = { you, nb, dims: dimsOf(device) };
 
@@ -235,7 +236,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     if (typeof name === 'string') patternName = name;
     imgTextures.splice(0).forEach(t=>t.dispose());
     for(const item of phoneScreens()){
-      const sc=item.spec,cv=typeof name==='string'?opts.makePattern(name,sc.resW,sc.resH):name;
+      const sc=item.spec,cv=typeof name==='string'?opts.makePattern(name,sc.resW,sc.resH,device.foldable?`duo-${item.key}`:undefined):name;
       const tex=new THREE.CanvasTexture(cv);tex.colorSpace=THREE.NoColorSpace;tex.anisotropy=8;tex.minFilter=THREE.LinearMipmapLinearFilter;imgTextures.push(tex);
       const u=item.screen.material.uniforms;u.uImg.value=tex;const da=sc.resW/sc.resH,ia=cv.width/cv.height;u.uImgScale.value.set(ia>da?da/ia:1,ia>da?1:ia/da);
     }
@@ -348,7 +349,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   let trans: null | { a: Snap; b: SceneState; t0: number; dur: number; p?: number; grip?: [THREE.Matrix4, THREE.Matrix4] | null; gripFor?: SceneState } = null;
   /** 演示序列里的“转动手机”：参数平滑变到目标值 */
   let paramTween: null | { key: string; from: number; to: number; t0: number; dur: number } = null;
-  let foldTween: null | { from:number; to:number; t0:number; dur:number } = null;
+  let foldTween: null | { from:number; to:number; fromMix:number; toMix:number; t0:number; dur:number } = null;
 
   /** 按预设和参数摆出目标状态，但不改变当前显示（摆完立刻还原当前姿势）。 */
   const buildState = (p: Preset) => {
@@ -518,23 +519,24 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     el.textContent = preset.id === 'desk' && d.dist ? `观看距离 ${d.dist.toFixed(0)} cm · 眼睛高出屏幕 ${d.height.toFixed(0)} cm` : '';
   }
   function setFold(value:number,animated=false) {
-    const target=THREE.MathUtils.clamp(value,0,180);
-    foldTween=animated&&target!==fold?{from:fold,to:target,t0:performance.now(),dur:800}:null;
-    if(!foldTween)applyFold(target);
+    const target=THREE.MathUtils.clamp(value,0,180),toMix=duoSurface==='outer'?1:0;
+    foldTween=null;
+    if(!animated)applyFold(target);
+    if(target===fold&&toMix===surfaceMix){if(animated)applyFold(target);return;}
+    foldTween={from:fold,to:target,fromMix:surfaceMix,toMix,t0:performance.now(),dur:animated?800:250};
   }
   function applyFold(value:number) {
-    fold=THREE.MathUtils.clamp(value,0,180);phone.setFold?.(fold,duoSurface);
+    fold=THREE.MathUtils.clamp(value,0,180);phone.setFold?.(fold,duoSurface,surfaceMix);
     ctx.dims=dimsOf(device);
     const output=ui.querySelector('[data-out="fold"]'),input=ui.querySelector('[data-ui="fold"]') as HTMLInputElement|null;
     if(output)output.textContent=Math.round(fold)+'°';if(input)input.value=String(Math.round(fold));
     if(trans)trans.b=buildState(preset);
     else if(state)applySteady(buildState(preset),false);
   }
-  function setDuoSurface(surface:DuoSurface) {
-    duoSurface=surface;phone.setFold?.(fold,surface);ctx.dims=dimsOf(device);useProfile();renderAdjust();
+  function setDuoSurface(surface:DuoSurface,animated=true) {
+    duoSurface=surface;if(!animated)surfaceMix=surface==='outer'?1:0;useProfile();renderAdjust();
     if(!model&&stereo.active)stereo.stop(false);
-    if(trans)trans.b=buildState(preset);
-    else if(state)applySteady(buildState(preset),false);
+    setFold(surface==='outer'?0:180,animated);
   }
   $('adjust').addEventListener('input', (e) => {
     const t = e.target as HTMLInputElement;
@@ -634,6 +636,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     if ((d.model || d.id === 'iphone18pm') && opts.appleIphone) $('warn').textContent = '正在加载 iPhone 模型…';
     const next = await makePhone(d);
     if (my !== loading) { next.dispose(); return false; }   // 期间又切了别的，丢掉
+    next.setFold?.(fold,duoSurface,surfaceMix);
     scene.remove(phone.group);
     phone.dispose();
     device = d;
@@ -654,7 +657,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const setDevice = async (id: string) => {
     const d = DEVICES.find((x) => x.id === id);
     if (!d || d === device) return;
-    foldTween=null;
+    foldTween=null;surfaceMix=duoSurface==='outer'?1:0;
     segOn('devices', d.id);
     swapping = true;
     try {
@@ -919,7 +922,8 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const { W, H } = size();
     if(foldTween){
       const k=Math.min(1,(now-foldTween.t0)/foldTween.dur);
-      applyFold(foldTween.from+(foldTween.to-foldTween.from)*ease(k));
+      const e=ease(k);surfaceMix=foldTween.fromMix+(foldTween.toMix-foldTween.fromMix)*e;
+      applyFold(foldTween.from+(foldTween.to-foldTween.from)*e);
       if(k>=1)foldTween=null;
     }
     stepTransition(now);
