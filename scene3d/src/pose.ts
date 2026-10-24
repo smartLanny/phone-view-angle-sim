@@ -108,16 +108,23 @@ export function headFrame(c: Character) {
 /** 握持参数：手指走向与竖直方向的夹角、掌心向左偏转、手腕相对右下角的位置、指尖落点。 */
 export const GRIP = { beta: 55, yaw: 42, dx: 0.028, dy: -0.020, dz: -0.024, tipOut: 0.009, tipZ: 1.2 };
 
+const DUO_HAND = {
+  beta: 35, yaw: 50, wrist: [.060, -.0545, .037],
+  fingers: [[13.25, 43, 13.25], [0, 85.25, 0], [9.25, 68, 19.5], [48.5, 46, 5]],
+  spread: [-3.5, -11.625, -15, -4.5],
+  thumbBase: [-13, 19.5, 35],
+};
+
 /** 右手相对手机的握持姿态（手机局部坐标）：手腕在右下角外后方，掌心贴背面并略朝左，四指斜向左上绕到左边框。 */
 function gripMatrix(d: PhoneDims) {
-  const beta = GRIP.beta * DEG, yaw = (d.grip ? -15 : GRIP.yaw) * DEG;
+  const beta = (d.grip ? DUO_HAND.beta : GRIP.beta) * DEG, yaw = (d.grip ? DUO_HAND.yaw : GRIP.yaw) * DEG;
   const n = new THREE.Vector3(-Math.sin(yaw), 0, Math.cos(yaw));
   const Xh = n.clone().negate();
   const across = new THREE.Vector3(-Math.cos(yaw), 0, -Math.sin(yaw));
   const Yh = across.multiplyScalar(Math.cos(beta)).add(new THREE.Vector3(0, Math.sin(beta), 0)).normalize();
   const Zh = new THREE.Vector3().crossVectors(Xh, Yh);
   const m = new THREE.Matrix4().makeBasis(Xh, Yh, Zh);
-  m.setPosition(d.W / 2 + (d.grip ? .016 : GRIP.dx), -d.H / 2 + GRIP.dy, -d.T + (d.grip ? -.036 : GRIP.dz));
+  m.setPosition(d.W / 2 + (d.grip ? DUO_HAND.wrist[0] : GRIP.dx), -d.H / 2 + (d.grip ? DUO_HAND.wrist[1] : GRIP.dy), -d.T + (d.grip ? DUO_HAND.wrist[2] : GRIP.dz));
   return m;
 }
 
@@ -165,24 +172,22 @@ export function holdPhoneRight(c: Character, phone: THREE.Matrix4, d: PhoneDims,
   shareTwist(b.lowerarm_r, b.hand_r);
 
   if (d.grip) {
-    const L = (p: THREE.Vector3) => p.applyMatrix4(phone);
-    const curl = (name: string, target: THREE.Vector3, knuckle: THREE.Vector3, pole: THREE.Vector3) => {
-      const first = b[`${name}_01_r`], second = b[`${name}_02_r`], third = b[`${name}_03_r`], tip = b[`${name}_04_leaf_r`];
-      aimY(first, L(knuckle).sub(worldPos(first)));
-      solveTwoBone(second, third, tip, L(target), L(pole));
+    // 固定屈曲角保留连续蒙皮；拇指保持伸直，沿边框侧夹而不遮挡屏幕。
+    const flex = (name: string, values: number[], spread = 0) => {
+      for (let i = 0; i < 3; i++) {
+        const joint = b[`${name}_0${i + 1}_r`];
+        joint.quaternion.copy(c.rest.get(joint)!);
+        if (i === 0) joint.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(Z, spread * DEG));
+        joint.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(X, values[i] * DEG));
+      }
     };
-    const back = d.grip.fingerX > -d.W / 2;
-    for (const [name, y] of [['index', .036], ['middle', .012], ['ring', -.012]] as const) {
-      curl(name, new THREE.Vector3(d.grip.fingerX, y, d.grip.fingerZ),
-        new THREE.Vector3(back ? 0 : d.grip.fingerX, y, -d.T - .012),
-        new THREE.Vector3(d.grip.fingerX + (back ? .020 : -.020), y + .020, -d.T - .035));
+    ['index', 'middle', 'ring', 'pinky'].forEach((name, i) => flex(name, DUO_HAND.fingers[i], DUO_HAND.spread[i]));
+    for (let i = 0; i < 3; i++) {
+      const joint = b[`thumb_0${i + 1}_r`];
+      joint.quaternion.copy(c.rest.get(joint)!);
+      if (i === 0) joint.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(...DUO_HAND.thumbBase.map(v => v * DEG) as [number, number, number])));
     }
-    curl('pinky', d.grip.pinky.clone(),
-      new THREE.Vector3(back ? 0 : d.grip.pinky.x, back ? -d.H / 2 + .025 : d.grip.pinky.y - .010, -d.T - (back ? .030 : .012)),
-      new THREE.Vector3(back ? -.010 : d.grip.pinky.x, back ? -d.H / 2 + .025 : -d.H / 2 - .035, -d.T - .040));
-    curl('thumb', d.grip.thumb.clone(),
-      new THREE.Vector3(d.W / 2 + .018, .020, -d.T - .016),
-      new THREE.Vector3(d.W / 2 + .038, 0, -d.T - .038));
+    b.hand_r.updateMatrixWorld(true);
     return ok;
   }
 
