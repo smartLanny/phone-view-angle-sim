@@ -1504,7 +1504,7 @@
     const st = $('qbState');
     if (st._html !== html) { st.innerHTML = html; st._html = html; }
     st.hidden = !html;
-    if (!$('picker').hidden) renderPicker();
+    if (!$('picker').hidden) { renderPicker(); requestAnimationFrame(placePicker); }   // 机型名变长变短时弹出框跟着对齐
   }
   $('qbState').addEventListener('click', (e) => {
     const b = e.target.closest('button');
