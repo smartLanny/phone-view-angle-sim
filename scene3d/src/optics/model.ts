@@ -15,8 +15,8 @@ export type XYZ = [number, number, number];
 type Prim = 'W' | 'R' | 'G' | 'B';
 const PRIMS: Prim[] = ['W', 'R', 'G', 'B'];
 
-export interface MeasureSet { name: string; file: string; phi: number; data: Record<Prim | 'K', XYZ[]> }
-export interface Profile { id: string; device: string; privacy: boolean; privacyKind?: 'mode' | 'film'; sets: MeasureSet[] }
+export interface MeasureSet { name: string; file: string; phi: number; data: Record<Prim, XYZ[]> & Partial<Record<'K', XYZ[]>> }
+export interface Profile { id: string; device: string; privacy: boolean; privacyKind?: 'mode' | 'film'; sourceNote?: string; sets: MeasureSet[] }
 export interface AngData { units: string; angles: number[]; profiles: Profile[] }
 
 export const norm360 = (a: number) => ((a % 360) + 360) % 360;

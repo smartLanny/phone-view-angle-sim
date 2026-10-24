@@ -18,6 +18,7 @@
     { sets: null }, window.DUO_DATA[surface] || {},
     { id: `duo-${surface}`, device: 'iPhone Duo', surface, privacy: false },
   ));
+  const DUO_NOTE = DUO_PROFILES.map((p) => p.sourceNote || (p.surface === 'outer' ? '外屏' : '内屏') + '数据待测').join('；');
   const PROFILES = [...DATA.profiles, ...DUO_PROFILES];
   const DEVICES = [...new Set(PROFILES.map((p) => p.device))].sort((a, b) => rank(a) - rank(b));
   const byId = (id) => PROFILES.find((p) => p.id === id);
@@ -900,7 +901,7 @@
     $('heroDir').textContent = S.theta < 0.5 ? '正对屏幕' : `从${Viz.dirName(S.psi)}看`;
     const duo = byId(ids[0]).surface;
     $('heroSub').textContent = `${duo ? '机身偏转角 · 折叠 ' + Math.round(S.fold) + '°' : '屏幕中心离轴角'} · 观看距离 ${Math.round(S.dist / 10)} cm`;
-    $('dataTag').textContent = ids.some((id) => !getModel(id)) ? '数据待测' : '实测数据';
+    $('dataTag').textContent = ids.some((id) => !getModel(id)) ? '数据待测' : ids.some((id) => byId(id).surface) && DUO_PROFILES.some((p) => p.measurement?.temporary) ? '含临时替代数据' : '实测数据';
     $('legend').classList.toggle('show', S.mode === 2);
     updatePad(M);
     updateCharts();
@@ -913,7 +914,7 @@
       const b = binoStats(M, ids[0]);
       const html = capName(byId(ids[0]), 0) +
         `<div class="cap-stats">${stat(b.dl.toFixed(1), '%', '双眼亮度差')}${stat(b.j.toFixed(2), 'JNCD', '双眼色度差')}${stat(b.de.toFixed(1), '', '双眼 ΔE2000')}</div>` +
-        `<div class="note">全屏平均${S.mode === 2 ? ' · 颜色为离轴角 0–70°' : ''}</div>`;
+        `<div class="note">全屏平均${S.mode === 2 ? ' · 颜色为离轴角 0–70°' : ''}${byId(ids[0]).surface ? ' · ' + DUO_NOTE : ''}</div>`;
       [0, 1].forEach((i) => placeCaption($('cap' + i), views[i], html));
       return;
     }
@@ -928,7 +929,8 @@
       const a = frame ? anglesAt(applyT(M, v.eye), frame.point, frame) : { theta: c.theta, psi };
       const e = getModel(ids[i]).evalAt(a.theta, a.psi);
       placeCaption(el, v, capName(byId(ids[i]), i) +
-        `<div class="cap-stats">${stat(Math.round(e.yRatio * 100), '%', '亮度')}${stat(e.jncd.toFixed(1), 'JNCD', '色偏')}${stat(e.de00.toFixed(1), '', 'ΔE2000')}</div>`);
+        `<div class="cap-stats">${stat(Math.round(e.yRatio * 100), '%', '亮度')}${stat(e.jncd.toFixed(1), 'JNCD', '色偏')}${stat(e.de00.toFixed(1), '', 'ΔE2000')}</div>` +
+        (byId(ids[i]).surface ? `<div class="note">${DUO_NOTE}</div>` : ''));
     });
   }
 
@@ -1310,7 +1312,7 @@
     $('devCards').innerHTML = DEVICES.map((d) => {
       const k = specKey(d) || d, suffix = d.slice(k.length).trim();
       const t = privacyText(d);
-      const sub = d === 'iPhone Duo' ? '内屏 / 外屏 · ' + (DUO_PROFILES.some((p) => !p.sets) ? '数据待测' : '实测数据')
+      const sub = d === 'iPhone Duo' ? (DUO_PROFILES.some((p) => !p.sets) ? '内屏 / 外屏 · 数据待测' : DUO_PROFILES.some((p) => p.measurement?.temporary) ? '内屏实测 / 外屏临时替代' : '内屏 / 外屏 · 实测数据')
         : hasPrivacy(d) ? `${t.off} / ${t.on} 两组实测` : '一组实测';
       return `<button class="dev-card${d === S.device ? ' on' : ''}" data-d="${d}">` +
         `<span class="ph" style="--c1:${colorOf(d).swatch}"></span>` +
@@ -1392,7 +1394,7 @@
     $('foldV').textContent = Math.round(S.fold) + '°';
     $('foldPresets').querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.angle === S.fold));
     const missing = DUO_PROFILES.filter((p) => !p.sets).map((p) => surfaceName(p.surface)).join('、');
-    $('duoStatus').textContent = missing ? `${missing}可视角数据待测，当前显示原图。` : '内外屏各自使用对应的实测数据。';
+    $('duoStatus').textContent = missing ? `${missing}可视角数据待测，当前显示原图。` : DUO_NOTE + '。';
   }
   let foldAnimation=null;
   function stopFoldAnimation() {
@@ -1517,7 +1519,7 @@
 
   // ---------- 模式：屏幕仿真（默认，本页原有工具）/ 场景演示（三维，scene3d.js，做动画用，从“画面 → 更多”进入） ----------
   let appMode = 'sim', scene3d = null, scene3dLoading = null;
-  const S3D_VER = 8;
+  const S3D_VER = 9;
   const loadScript = (src) => new Promise((res, rej) => {
     const s = document.createElement('script');
     s.src = src; s.onload = res; s.onerror = () => rej(new Error('无法加载 ' + src));

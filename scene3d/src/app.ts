@@ -1064,7 +1064,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       const ps = hasPrivacy() ? [...profilesOf(device)].sort((a, b) => Number(a.privacy) - Number(b.privacy)) : [profile];
       const film = privacyKind() === 'film';
       const panelProfiles: PanelProfile[] = ps.map((p) => ({
-        id: p.id, label: p.privacy ? (film ? '贴防窥膜' : '防窥开启') : (film ? '未贴膜' : '防窥关闭'),
+        id: p.id, label: p.sourceNote || (p.privacy ? (film ? '贴防窥膜' : '防窥开启') : (film ? '未贴膜' : '防窥关闭')),
         model: modelOf(p).model, lut: modelOf(p).lut, active: p.id === profile!.id,
       }));
       const am = screenAngles(mainEye);
@@ -1072,7 +1072,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       if (otherEye && !stereoOn) eyes.push({ ...screenAngles(otherEye), who: mainViewer === 'nb' ? '你' : '旁人' });
       if (stereoOn && stereo.reads) eyes.splice(0, 1, ...stereo.reads.map((r, i) => ({ ...screenAngles(r.eye), who: i ? '右眼' : '左眼' })));
       else if (eyesLR) eyes.splice(0, 1, ...eyesLR.map((e, i) => ({ ...screenAngles(e), who: i ? '右眼' : '左眼' })));
-      data.update(panelProfiles, eyes, JMAX, device.name);
+      data.update(panelProfiles, eyes, JMAX, device.name + (device.foldable ? ' · ' + (profile.sourceNote || (duoSurface === 'inner' ? '内屏' : '外屏')) : ''));
     }
 
     // 地铁场景的两个小窗：画面在主画面之前渲染（见上），这里只更新位置、淡入淡出
@@ -1085,24 +1085,25 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     // 读数（主观看者，屏幕中心）
     const c = probes[1],a=screenAngles(mainEye),ev=model?.evalAt(a.theta,a.psi);
     $('theta').textContent = `${(c?.theta??a.theta).toFixed(0)}°`;
-    $('where').textContent = sub ? `${mainViewer === 'nb' ? '旁人' : '你'}看屏幕中心的离轴角` : '屏幕中心离轴角';
+    $('where').textContent = (sub ? `${mainViewer === 'nb' ? '旁人' : '你'}看屏幕中心的离轴角` : '屏幕中心离轴角') + (device.foldable ? ' · ' + (duoSurface === 'inner' ? '内屏' : '外屏') : '');
     $('deK').textContent = 'ΔE2000';
     $('scene').textContent = rig.mode === 'eye' ? (sub ? `${mainViewer === 'nb' ? '旁人' : '你'}看到的屏幕` : `${preset.name} · 眼睛看到的屏幕`) : preset.name;
     const measured=c?.ev||ev;
+    const sourceNote=device.foldable?[opts.duoData?.inner?.sourceNote,opts.duoData?.outer?.sourceNote].filter(Boolean).join('；'):profile?.sourceNote;
     $('lum').textContent = measured?`${Math.round(measured.yRatio * 100)}%`:'—';
     $('jncd').textContent = measured?measured.jncd.toFixed(1):'—';
     $('de').textContent = measured?measured.de00.toFixed(1):'—';
-    $('warn').textContent = measured?(measured.clamped?'超出实测范围（> 70°），按 70° 计':''):`${duoSurface==='inner'?'内屏':'外屏'}测量待补充 · 当前显示${displayMode===2?'离轴角分布':'原图'}`;
+    $('warn').textContent = measured ? [sourceNote, measured.clamped ? '超出实测范围（> 70°），按 70° 计' : ''].filter(Boolean).join(' · ') : `${duoSurface==='inner'?'内屏':'外屏'}测量待补充 · 当前显示${displayMode===2?'离轴角分布':'原图'}`;
     if (eyesLR && model) {     // 侧卧：两只眼睛分别的读数，ΔE2000 为两眼之间的色差
       const current=model;
       const r = eyesLR.map((e) => { const a = screenAngles(e); return { theta: a.theta, ev: current.evalAt(a.theta, a.psi) }; });
       $('theta').textContent = `${r[0].theta.toFixed(0)}° / ${r[1].theta.toFixed(0)}°`;
-      $('where').textContent = '左眼（下）/ 右眼（上）离轴角';
+      $('where').textContent = '左眼（下）/ 右眼（上）离轴角' + (device.foldable ? ' · ' + (duoSurface === 'inner' ? '内屏' : '外屏') : '');
       $('lum').textContent = `${Math.round(r[0].ev.yRatio * 100)}% / ${Math.round(r[1].ev.yRatio * 100)}%`;
       $('jncd').textContent = `${r[0].ev.jncd.toFixed(1)} / ${r[1].ev.jncd.toFixed(1)}`;
       $('deK').textContent = '两眼 ΔE2000';
       $('de').textContent = deltaE2000(xyzToLab(r[0].ev.W, current.ref.W), xyzToLab(r[1].ev.W, current.ref.W)).toFixed(1);
-      $('warn').textContent = r.some((x) => x.ev.clamped) ? '超出实测范围（> 70°），按 70° 计' : '';
+      $('warn').textContent = [sourceNote, r.some((x) => x.ev.clamped) ? '超出实测范围（> 70°），按 70° 计' : ''].filter(Boolean).join(' · ');
     }
     if (++frames === 2) readyResolve();
   };

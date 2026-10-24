@@ -49,10 +49,31 @@ class ConversionTests(unittest.TestCase):
                     self.assertEqual(actual, source['xyz'][primary][index][j])
         self.assertEqual(path.read_bytes(), raw)
 
+    def test_duo_measured_inner_and_temporary_outer(self):
+        source = json.loads((ROOT / converter.DUO_SOURCE).read_text())
+        duo = json.loads((ROOT / 'web/duo-data.js').read_text().split('=', 1)[1].strip().rstrip(';'))
+        self.assertNotIn('K', source['xyz'])
+        inner = duo['inner']
+        self.assertEqual(inner['measurement']['azimuthRotation'], 0)
+        for index, azimuth in enumerate(source['grid']['az']):
+            item = next(s for s in inner['sets'] if s['phi'] == azimuth % 180)
+            self.assertNotIn('K', item['data'])
+            sign = 1 if azimuth < 180 else -1
+            for primary in ('W', 'R', 'G', 'B'):
+                for j, angle in enumerate(source['grid']['th']):
+                    self.assertEqual(item['data'][primary][35 + sign * (angle // 2)], source['xyz'][primary][index][j])
+        base = json.loads((ROOT / 'web/data.js').read_text().split('=', 1)[1].strip().rstrip(';'))
+        self.assertEqual(duo['outer']['sets'], next(p for p in base['profiles'] if p['id'] == 'p0')['sets'])
+        self.assertTrue(duo['outer']['measurement']['temporary'])
+        self.assertIn('临时替代', duo['outer']['sourceNote'])
+        self.assertTrue(all(value is None for screen in duo['reflection'].values() for value in screen.values()))
+        self.assertEqual((ROOT / 'web/duo-data.js').read_bytes(), (ROOT / 'scene3d/public/data/duo_data.js').read_bytes())
+
     def test_complete_profiles_and_reproducible_snapshots(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'data.js'
             subprocess.run([sys.executable, str(ROOT / 'tools/convert_ang2.py'), str(ROOT), str(output)], check=True, capture_output=True)
+            self.assertEqual((Path(directory) / 'duo-data.js').read_bytes(), (ROOT / 'web/duo-data.js').read_bytes())
             self.assertEqual(output.read_bytes(), (ROOT / 'web/data.js').read_bytes())
             self.assertEqual(output.read_bytes(), (ROOT / 'scene3d/public/data/ang_data.js').read_bytes())
             payload = json.loads(output.read_text().split('=', 1)[1].strip().rstrip(';'))

@@ -30,6 +30,7 @@ PROFILE_IDS = {
     ("华为 Mate 90 Pro Max 典藏版", False): "p4",
     ("iPhone 17 Pro Max GV3", False): "p5",
 }
+DUO_SOURCE = "iPhone Duo 内屏/iPhone Duo 内屏低精度.json"
 VAM_SOURCES = {
     "iPhone 17 Pro Max GV3/iPhone 17 ProMax.json": {
         "device": "iPhone 17 Pro Max GV3", "azimuth_rotation": 180,
@@ -112,6 +113,8 @@ def load_vam(path, device, azimuth_rotation):
         positive, negative = rows[phi], rows[phi + 180]
         data = {}
         for primary in PRIMARY_KEYS.values():
+            if primary == "K" and primary not in source["xyz"]:
+                continue
             values = source["xyz"][primary]
             data[primary] = list(reversed(values[negative][1:])) + values[positive]
         sets.append({
@@ -198,6 +201,31 @@ def main():
         f.write("window.ANG_DATA = ")
         json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
         f.write(";\n")
+    duo_path = os.path.join(src, DUO_SOURCE)
+    if os.path.isfile(duo_path):
+        inner_sets = load_vam(duo_path, "iPhone Duo 内屏", 0)
+        if any(s["angles"] != angles for s in inner_sets):
+            sys.exit("Duo 内屏的角度序列与基础数据不一致")
+        for s in inner_sets:
+            s["file"] = DUO_SOURCE
+        inner = {
+            "id": "duo-inner", "device": "iPhone Duo", "privacy": False,
+            "sourceNote": "内屏低精度实测",
+            "measurement": {"file": DUO_SOURCE, "azimuthRotation": 0},
+            "sets": [{k: s[k] for k in ("name", "file", "phi", "data")} for s in inner_sets],
+        }
+        donor = next(p for p in profiles if p["id"] == "p0")
+        outer = {
+            **donor, "id": "duo-outer", "device": "iPhone Duo",
+            "sourceNote": "外屏临时替代 · iPhone 18 Pro Max GH3",
+            "measurement": {"temporary": True, "profile": "p0", "device": donor["device"]},
+        }
+        reflection = dict.fromkeys(("sci", "sce", "geometry", "instrument", "wavelengthNm", "unit", "angularScatter"))
+        duo = {"inner": inner, "outer": outer, "reflection": {"inner": reflection, "outer": reflection}}
+        with open(os.path.join(os.path.dirname(out), "duo-data.js"), "w", encoding="utf-8") as f:
+            f.write("window.DUO_DATA = ")
+            json.dump(duo, f, ensure_ascii=False, separators=(",", ":"))
+            f.write(";\n")
     for p in profiles:
         state = {"film": " · 贴防窥膜", "mode": " · 防窥开"}.get(p.get("privacyKind"), "")
         print(f"[{p['id']}] {p['device']}{state}")
