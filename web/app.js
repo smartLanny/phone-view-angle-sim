@@ -138,10 +138,13 @@
     d.screens.forEach((s) => s.screen.dispose());
     delete devCache[key];
   }
+  /** 对比时 Duo 各按自己的屏幕摆姿态：外屏合上（0°）看，内屏展开（180°）看；单台时跟随折叠滑块。 */
+  const foldFor = (surface) => (S.compare ? (surface === 'outer' ? 0 : 180) : S.fold);
   function dev(name, surface = S.duoSurface) {
     const duo = name === 'iPhone Duo', key = duo ? `${name}|${surface}` : name;
     const mix=duo&&!S.compare?surfaceMix:undefined;
-    if (devCache[key] && (!duo || (devCache[key].fold === S.fold && devCache[key].frameMix === mix))) return devCache[key];
+    const fold = duo ? foldFor(surface) : S.fold;
+    if (devCache[key] && (!duo || (devCache[key].fold === fold && devCache[key].frameMix === mix))) return devCache[key];
     if (devCache[key]) dropDev(key);
     const spec = specOf(name);
     if (spec.model && !Phone3D.hasModel(spec.model) && !pendingModels.has(spec.model) && !failedModels.has(spec.model)) {
@@ -154,7 +157,7 @@
         toast(err.message);
       }).finally(() => pendingModels.delete(spec.model));
     }
-    const phone = duo ? Phone3D.buildDuo(S.fold, surface, mix) : Phone3D.build(spec.body, spec.model);
+    const phone = duo ? Phone3D.buildDuo(fold, surface, mix) : Phone3D.build(spec.body, spec.model);
     const P = phone.spec, sc = duo ? spec.screens[surface] : spec.screen;
     const ratio = sc.resH / sc.resW;
     const w = (sc.diag * 25.4) / Math.sqrt(1 + ratio * ratio);
@@ -162,7 +165,7 @@
     if (!phone.corners) for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const z of [0, -P.T]) corners.push([sx * P.W / 2, sy * P.H / 2, z]);
     const screens = duo ? phone.screens : [{ mesh: phone.screen, screenHalf: sc.half || [w / 2, (w * ratio) / 2], corner: sc.corner, cutout: spec.cutout, holes: sc.holes }];
     return (devCache[key] = {
-      name, spec, corners, fold: S.fold, surface, frameMix:mix,
+      name, spec, corners, fold, surface, frameMix:mix,
       screenHalf: sc.half || [w / 2, (w * ratio) / 2],
       body: meshVAO(bodyProg, phone.body, true),
       surfaceFrame: phone.surfaceFrame,
@@ -223,8 +226,20 @@
   /** 左右眼的世界坐标（mm）。 */
   const eyePos = (side) => [side * S.ipd / 2, 0, S.dist];
 
-  /** 舞台可用区域（去掉左右栏 / 底部抽屉 / 左上角读数）。 */
+  /** 舞台可用区域：再在底部给悬浮的快捷切换条留出位置，快捷条水平居中于舞台。 */
   function stageRect() {
+    const R = baseStageRect(), qb = $('quickbar');
+    if (!qb.hidden) {
+      const h = qb.offsetHeight || 44;
+      qb.style.left = (R.x0 + R.x1) / 2 + 'px';
+      qb.style.top = R.bottom - h + 'px';
+      qb.style.maxWidth = Math.max(R.x1 - R.x0 - 16, 200) + 'px';
+      R.bottom -= h + 10;
+    }
+    return R;
+  }
+  /** 舞台可用区域（去掉左右栏 / 底部抽屉 / 左上角读数）。 */
+  function baseStageRect() {
     const W = canvas.clientWidth, H = canvas.clientHeight, L = document.body.dataset.layout;
     const rc = (id) => $(id).getBoundingClientRect();
     if (S.clean) return { x0: 0, x1: W, top: rc('hud').bottom + 8, bottom: H - 12 };
@@ -924,7 +939,7 @@
     $('heroTheta').textContent = Math.round(S.theta) + '°';
     $('heroDir').textContent = S.theta < 0.5 ? '正对屏幕' : `从${Viz.dirName(S.psi)}看`;
     const duo = byId(ids[0]).surface;
-    $('heroSub').textContent = `${duo ? '机身偏转角 · 折叠 ' + Math.round(S.fold) + '°' : '屏幕中心离轴角'} · 观看距离 ${Math.round(S.dist / 10)} cm`;
+    $('heroSub').textContent = `${duo ? (S.compare ? '机身偏转角' : '机身偏转角 · 折叠 ' + Math.round(S.fold) + '°') : '屏幕中心离轴角'} · 观看距离 ${Math.round(S.dist / 10)} cm`;
     $('dataTag').textContent = ids.some((id) => !getModel(id)) ? '数据待测' : ids.some((id) => byId(id).surface) && DUO_PROFILES.some((p) => p.measurement?.temporary) ? '含临时替代数据' : '实测数据';
     $('legend').classList.toggle('show', S.mode === 2);
     updatePad(M);
@@ -954,7 +969,7 @@
       const e = getModel(ids[i]).evalAt(a.theta, a.psi);
       placeCaption(el, v, capName(byId(ids[i]), i) +
         `<div class="cap-stats">${stat(Math.round(e.yRatio * 100), '%', '亮度')}${stat(e.jncd.toFixed(1), 'JNCD', '色偏')}${stat(e.de00.toFixed(1), '', 'ΔE2000')}</div>` +
-        (byId(ids[i]).surface ? `<div class="note">${DUO_NOTE}</div>` : ''));
+        (byId(ids[i]).surface ? `<div class="note">${byId(ids[i]).sourceNote || DUO_NOTE}</div>` : ''));   // 每块屏只标自己的数据来源
     });
   }
 
@@ -1134,6 +1149,7 @@
     const el = $('theta');
     if (el) el.value = Math.round(S.theta);   // 滑块步长 1°，拖动时回写的是同一个值，不会跳
     if ($('thetaV')) $('thetaV').textContent = Math.round(S.theta) + '°';
+    syncDial();
   }
 
   let anim = null;
@@ -1215,6 +1231,7 @@
     } else if (angleRow.parentElement !== document.querySelector('.pad-side')) {
       document.querySelector('.pad-side').appendChild(angleRow);
     }
+    placePicker();
     const hud = $('hud'), rail = $('rail'), pb = $('panelBody');
     if (L === 'wide' && !S.clean) {
       if (hud.parentElement !== rail) rail.prepend(hud);
@@ -1257,6 +1274,7 @@
   function setClean(on) {
     S.clean = on;
     document.body.classList.toggle('clean', on);
+    syncQuick();
     applyLayout();
     if (on) toast('已隐藏界面 · 按 H 恢复');
     requestRender();
@@ -1298,6 +1316,7 @@
   }, { passive: false });
   window.addEventListener('keydown', (e) => {
     if (appMode === 'scene') return;   // 场景演示模式下快捷键交给三维场景
+    if (!$('picker').hidden) { if (e.key === 'Escape') openPicker(false); return; }
     if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = { ArrowLeft: [-2, 0], ArrowRight: [2, 0], ArrowUp: [0, 2], ArrowDown: [0, -2] }[e.key];
     if (k) { e.preventDefault(); stopSweep(); setTilt(S.tilt[0] + k[0], S.tilt[1] + k[1]); return; }
@@ -1400,6 +1419,7 @@
     $('stereoGroup').hidden = !S.stereo;
     $('secFold').hidden = !hasDuo();
     $('duoSurface').hidden = S.compare;
+    $('foldCtl').hidden = S.compare;   // 对比时外屏固定合上、内屏固定展开
     syncSeg('duoSurface', S.duoSurface);
     syncFoldUI();
     [0, 1].forEach((i) => { $('slot' + i).value = S.slots[i]; });
@@ -1408,6 +1428,7 @@
     document.title = `可视角度仿真 · ${activeDevices().join(' vs ')}`;
     renderDevCards();
     renderSwatches();
+    syncQuick();
     if (S.pattern) loadPattern(S.pattern);
   }
   const options = PROFILES.slice().sort((a, b) => rank(a.device) - rank(b.device) || a.privacy - b.privacy)
@@ -1422,7 +1443,7 @@
     $('fold').value = Math.round(S.fold);
     $('foldV').textContent = Math.round(S.fold) + '°';
     const missing = DUO_PROFILES.filter((p) => !p.sets).map((p) => surfaceName(p.surface)).join('、');
-    $('duoStatus').textContent = missing ? `${missing}可视角数据待测，当前显示原图。` : DUO_NOTE + '。';
+    $('duoStatus').textContent = (missing ? `${missing}可视角数据待测，当前显示原图。` : DUO_NOTE + '。') + (S.compare ? '对比时外屏按合上、内屏按展开显示。' : '');
   }
   let foldAnimation=null;
   function stopFoldAnimation(finishMix=false) {
@@ -1446,11 +1467,162 @@
     };
     tween.raf=requestAnimationFrame(step);
   }
-  bindSeg('duoSurface', (v) => {
-    S.duoSurface=v;syncProfileUI();setFold(v==='outer'?0:180,true);
-  });
+  /** Duo：合上看外屏 / 展开看内屏（平滑折叠，可中途反向）。 */
+  function setDuoSurface(v) { S.duoSurface = v; syncProfileUI(); setFold(v === 'outer' ? 0 : 180, true); }
+  /** 0 单台 / 1 双机对比 / 2 双眼立体。 */
+  function setCompareMode(v) { S.compare = v === 1; S.stereo = v === 2; retryFailedModels(); syncProfileUI(); requestRender(); }
+  bindSeg('duoSurface', setDuoSurface);
   $('fold').addEventListener('input', (e) => setFold(e.target.value));
-  bindSeg('compare', (v) => { S.compare = v === '1'; S.stereo = v === '2'; retryFailedModels(); syncProfileUI(); requestRender(); });
+  bindSeg('compare', (v) => setCompareMode(+v));
+
+  // ---------- 画面上的快捷切换条 + 机型选择 ----------
+  const QB_ICON = {
+    outer: '<svg width="12" height="16" viewBox="0 0 12 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="13" rx="2.2"/></svg>',
+    inner: '<svg width="20" height="16" viewBox="0 0 20 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.5" y="1.5" width="17" height="13" rx="2.2"/><path d="M10 2v12" stroke-dasharray="1.6 1.8"/></svg>',
+    shield: '<svg width="14" height="16" viewBox="0 0 14 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M7 1.5l5.2 2v4.1c0 3.3-2.2 5.7-5.2 6.9-3-1.2-5.2-3.6-5.2-6.9V3.5z"/></svg>',
+  };
+  /** 快捷条上的短名：“小米 18 Pro Max”“iPhone GH3 防窥膜”“iPhone Duo 外屏”。 */
+  function chipName(p) {
+    const k = specKey(p.device) || p.device, suffix = p.device.slice(k.length).trim();
+    const name = S.compare ? [shortName(p.device), suffix].filter(Boolean).join(' ') : p.device;
+    const st = p.surface ? surfaceName(p.surface) : hasPrivacy(p.device) && p.privacy ? privacyText(p.device).short : '';
+    return S.compare && st ? `${name} ${st}` : name;
+  }
+  function syncQuick() {
+    const qb = $('quickbar'), ids = activeIds();
+    qb.hidden = S.clean;
+    $('devDots').innerHTML = ids.map((id, i) => `<i style="--c:${S.compare ? SERIES[i] : colorOf(byId(id).device).swatch}"></i>`).join('');
+    $('devName').textContent = ids.map((id) => chipName(byId(id))).join(' vs ');
+    let html = '';
+    if (!S.compare && S.device === 'iPhone Duo') {
+      html = ['outer', 'inner'].map((s) => `<button data-surface="${s}" class="${S.duoSurface === s ? 'on' : ''}" aria-pressed="${S.duoSurface === s}">` +
+        `${QB_ICON[s]}<span class="lg">${s === 'outer' ? '合上看外屏' : '展开看内屏'}</span><span class="sm">${s === 'outer' ? '合上' : '展开'}</span></button>`).join('');
+    } else if (!S.compare && hasPrivacy(S.device)) {
+      const on = !!(variant(S.device, S.privacy) || {}).privacy;
+      html = `<button data-privacy="1" class="qb-toggle${on ? ' on' : ''}" aria-pressed="${on}">${QB_ICON.shield}<span>${privacyText(S.device).switch}</span><i class="qb-sw"></i></button>`;
+    }
+    const st = $('qbState');
+    if (st._html !== html) { st.innerHTML = html; st._html = html; }
+    st.hidden = !html;
+    if (!$('picker').hidden) { renderPicker(); requestAnimationFrame(placePicker); }   // 机型名变长变短时弹出框跟着对齐
+  }
+  $('qbState').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    stopSweep();
+    if (b.dataset.surface) { if (b.dataset.surface !== S.duoSurface) setDuoSurface(b.dataset.surface); return; }
+    if (b.dataset.privacy) {
+      S.privacy = !(variant(S.device, S.privacy) || {}).privacy;
+      syncProfileUI();
+      requestRender();
+      toast(profileLabel(byId(activeIds()[0])));
+    }
+  });
+
+  // 机型选择：手机上是底部弹层，电脑上是快捷条上方的弹出框
+  let pickSide = 1;
+  function openPicker(on) {
+    $('picker').hidden = !on;
+    $('scrim').hidden = !on;
+    $('devChip').setAttribute('aria-expanded', String(on));
+    if (on) { renderPicker(); placePicker(); }
+  }
+  function placePicker() {
+    const pk = $('picker');
+    if (pk.hidden) return;
+    if (document.body.dataset.layout === 'sheet') { pk.style.left = pk.style.bottom = ''; return; }
+    const rc = $('devChip').getBoundingClientRect(), w = pk.offsetWidth;
+    pk.style.left = Math.min(Math.max(rc.left + rc.width / 2 - w / 2, 12), innerWidth - w - 12) + 'px';
+    pk.style.bottom = innerHeight - rc.top + 10 + 'px';
+  }
+  function devSub(d) {
+    const t = privacyText(d);
+    // 状态已在右侧分段里列出，这里只说明数据情况
+    return d === 'iPhone Duo' ? (DUO_PROFILES.some((p) => !p.sets) ? '内屏 / 外屏 · 数据待测' : DUO_PROFILES.some((p) => p.measurement?.temporary) ? '内屏实测 / 外屏临时替代' : '内屏 / 外屏 · 实测数据')
+      : hasPrivacy(d) ? `两组实测 · ${t.short}前后` : '一组实测';
+  }
+  function renderPicker() {
+    const cmp = S.compare;
+    $('pickSide').hidden = !cmp;
+    syncSeg('pickSide', pickSide);
+    $('pickCompare').checked = cmp;
+    $('pickCompareHint').textContent = cmp ? '先选左侧 / 右侧，再点机型' : '再选一台放在右边';
+    const cur = byId(cmp ? S.slots[pickSide] : activeIds()[0]);
+    $('pickList').innerHTML = DEVICES.map((d) => {
+      const k = specKey(d) || d, suffix = d.slice(k.length).trim(), on = cur.device === d;
+      const opts = d === 'iPhone Duo' ? DUO_PROFILES.map((p) => [p.id, surfaceName(p.surface)])
+        : hasPrivacy(d) ? [false, true].map((pv) => [variant(d, pv).id, privacyText(d)[pv ? 'on' : 'off']]) : [];
+      const main = on ? cur : d === 'iPhone Duo' ? byId(`duo-${cmp ? 'inner' : S.duoSurface}`) : variant(d, cur.privacy) || pick(d);
+      const seg = opts.length ? `<div class="seg mini pk-state">${opts.map(([id, label]) =>
+        `<button data-id="${id}" class="${on && cur.id === id ? 'on' : ''}">${label}</button>`).join('')}</div>` : '';
+      return `<div class="pk-row${on ? ' on' : ''}"><button class="pk-main" data-id="${main.id}">` +
+        `<span class="ph" style="--c1:${colorOf(d).swatch}"></span>` +
+        `<span class="pk-txt"><b>${k}${suffix ? `<span class="badge">${suffix}</span>` : ''}</b><small>${devSub(d)}</small></span></button>${seg}</div>`;
+    }).join('');
+  }
+  function chooseProfile(id) {
+    const p = byId(id);
+    stopSweep();
+    if (S.compare) { S.slots[pickSide] = id; retryFailedModels(); syncProfileUI(); requestRender(); return; }
+    S.device = p.device;
+    retryFailedModels();
+    if (p.surface) { setDuoSurface(p.surface); return; }
+    S.privacy = p.privacy;
+    syncProfileUI();
+    requestRender();
+  }
+  $('devChip').addEventListener('click', () => openPicker($('picker').hidden));
+  $('scrim').addEventListener('click', () => openPicker(false));
+  $('pickerClose').addEventListener('click', () => openPicker(false));
+  $('pickList').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-id]');
+    if (!b) return;
+    chooseProfile(b.dataset.id);
+    if (S.compare) renderPicker(); else openPicker(false);
+  });
+  bindSeg('pickSide', (v) => { pickSide = +v; renderPicker(); });
+  $('pickCompare').addEventListener('change', (e) => {
+    if (e.target.checked) {
+      const cur = activeIds()[0], dv = byId(cur).device;
+      const other = S.slots.find((id) => byId(id).device !== dv) || pick(DEVICES.find((d) => d !== dv)).id;
+      S.slots = [cur, other];
+      pickSide = 1;
+      setCompareMode(1);
+    } else {
+      const left = S.slots[0];
+      setCompareMode(0);
+      chooseProfile(left);   // 回到单台时沿用左侧那台
+    }
+    renderPicker();
+  });
+
+  // 手机底栏的小方向盘：与大方向盘同一映射（右 = 0°，上 = 90°），中心为正对、边缘为最大离轴角
+  function syncDial() {
+    const r = Math.min(S.theta / MAX_TILT, 1) * 19, a = S.psi * DEG;   // 19 px：方向盘可拖动半径
+    $('dialDot').style.transform = `translate(${(r * Math.cos(a)).toFixed(1)}px, ${(-r * Math.sin(a)).toFixed(1)}px)`;
+    $('dialArm').style.width = r.toFixed(1) + 'px';
+    $('dialArm').style.transform = `rotate(${(-S.psi).toFixed(1)}deg)`;
+  }
+  (() => {
+    const el = $('dial');
+    let down = false;
+    const pickAt = (e) => {
+      const rc = el.getBoundingClientRect();
+      const x = e.clientX - rc.left - rc.width / 2, y = -(e.clientY - rc.top - rc.height / 2);
+      let th = Math.min((Math.hypot(x, y) / 19) * MAX_TILT, MAX_TILT);
+      let psi = AngleModel.norm360(Math.atan2(y, x) / DEG);
+      const snap = Math.round(psi / 15) * 15;
+      if (Math.abs(psi - snap) < 6) psi = AngleModel.norm360(snap);
+      th = th < 3 ? 0 : Math.round(th);
+      stopSweep();
+      cancelAnimationFrame(anim);
+      setView(th, psi);
+    };
+    el.addEventListener('pointerdown', (e) => { down = true; el.setPointerCapture(e.pointerId); pickAt(e); });
+    el.addEventListener('pointermove', (e) => { if (down) pickAt(e); });
+    el.addEventListener('pointerup', () => { down = false; });
+    el.addEventListener('pointercancel', () => { down = false; });
+  })();
   bindSeg('stereoView', (v) => { S.cross = v === '1'; requestRender(); });
   $('size').addEventListener('input', (e) => { S.size = e.target.value / 100; $('sizeV').textContent = e.target.value + '%'; requestRender(); });
   $('gap').addEventListener('input', (e) => { S.gap = +e.target.value; $('gapV').textContent = S.gap + ' px'; requestRender(); });

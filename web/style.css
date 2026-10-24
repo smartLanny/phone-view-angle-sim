@@ -121,14 +121,14 @@ select option { background: #1b1d22; }
   padding: 10px 12px; border-radius: 12px; background: var(--raise); border: 1px solid transparent;
 }
 .dev-card.on { background: rgba(57, 135, 229, .12); border-color: rgba(57, 135, 229, .55); }
-.dev-card .ph {
+.dev-card .ph, .pk-main .ph {
   flex: none; width: 18px; height: 34px; border-radius: 5px;
   background: linear-gradient(155deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, 0) 45%, rgba(0, 0, 0, .25)), var(--c1);
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .22), 0 1px 3px rgba(0, 0, 0, .4);
 }
 .dev-card b { display: block; font-weight: 600; }
 .dev-card small { color: var(--muted); font-size: 11.5px; }
-.dev-card .badge { margin-left: 6px; font-size: 10.5px; font-weight: 500; color: var(--text-2); padding: 0 5px; border-radius: 4px; border: 1px solid var(--line-2); }
+.dev-card .badge, .pk-txt .badge { margin-left: 6px; font-size: 10.5px; font-weight: 500; color: var(--text-2); padding: 0 5px; border-radius: 4px; border: 1px solid var(--line-2); }
 
 .slot { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .slot-side { flex: none; width: 1.2em; color: var(--text-2); font-size: 12px; }
@@ -302,13 +302,12 @@ body[data-layout="sheet"] #quick { display: block; padding: 0 16px 6px; backgrou
 #grab { display: block; width: 100%; height: 22px; padding: 0; background: transparent; border-radius: 0; touch-action: none; }
 #grab span { display: block; width: 38px; height: 5px; margin: 7px auto 0; border-radius: 3px; background: rgba(255, 255, 255, .24); }
 #grab:hover { background: transparent; }
-body[data-layout="sheet"] #quick .angle-row { margin-top: 0; gap: 10px; align-items: center; }
-body[data-layout="sheet"] #quick .theta-ctl { display: grid; grid-template-columns: auto 1fr 3.2em; align-items: center; gap: 10px; }
-body[data-layout="sheet"] #quick .theta-ctl .row-title { display: contents; }
-body[data-layout="sheet"] #quick .theta-ctl .row-title span { grid-column: 1; color: var(--text-2); }
-body[data-layout="sheet"] #quick .theta-ctl input { grid-column: 2; grid-row: 1; margin: 0; height: 28px; }
-body[data-layout="sheet"] #quick .theta-ctl .row-title b { grid-column: 3; grid-row: 1; text-align: right; font-size: 16px; }
-body[data-layout="sheet"] #quick .play { margin: 0; padding: 7px 12px; }
+body[data-layout="sheet"] #quick .angle-row { margin-top: 0; gap: 12px; align-items: center; }
+body[data-layout="sheet"] #quick .theta-ctl .row-title { margin: 0 0 4px; }
+body[data-layout="sheet"] #quick .theta-ctl .row-title b { font-size: 16px; }
+body[data-layout="sheet"] #quick .theta-ctl input { height: 24px; margin: 0; }
+body[data-layout="sheet"] #quick .play { margin: 0; width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 12px; }
+body[data-layout="sheet"] #quick .play .lbl { display: none; }
 body[data-layout="sheet"] #panelBody { overflow-y: auto; overscroll-behavior: contain; }
 body[data-layout="sheet"] #tabs { padding: 4px 12px 8px; border-bottom: 1px solid var(--line); }
 body[data-layout="sheet"] #tabs button { padding: 8px 4px; }
@@ -330,8 +329,7 @@ body[data-layout="sheet"] .caption.dock, body[data-layout="side"] .caption.dock 
   background: transparent; border: 0; -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 body[data-layout="side"] .caption.dock { right: 348px; top: 12px; max-width: calc(100% - 348px - 150px); }
-.caption.dock .cap-name { justify-content: flex-end; flex-wrap: wrap; gap: 0 6px; font-size: 12px; font-weight: 500; color: var(--text-2); }
-.caption.dock .cap-name small { color: var(--muted); }
+.caption.dock .cap-name { display: none; }   /* 机型名已在画面下方的快捷条上 */
 .caption.dock .cap-stats { justify-content: flex-end; gap: 14px; margin-top: 4px; }
 .caption.dock .cap-stats div { align-items: flex-end; }
 .caption.dock .cap-stats b { font-size: 17px; }
@@ -388,4 +386,85 @@ body.mode-3d #tip, body.mode-3d #tip2, body.mode-3d #hint, body.mode-3d .sframe 
 @media (max-width: 760px) {
   .app-mode, body.mode-3d .app-mode { top: 10px; right: 10px; }
   .app-mode button { padding: 6px 10px; font-size: 12px; }
+}
+
+/* ================= 手机底栏的小方向盘 ================= */
+.dial { display: none; }
+body[data-layout="sheet"] #quick .dial {
+  display: block; position: relative; flex: none; width: 52px; height: 52px; padding: 0; border-radius: 50%;
+  background: #0d0f12; border: 1px solid var(--line-2); touch-action: none; cursor: grab;
+}
+.dial i { position: absolute; display: block; pointer-events: none; }
+.dial-ring {
+  inset: 6px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .12);
+  background: linear-gradient(rgba(255, 255, 255, .13), rgba(255, 255, 255, .13)) center / 1px 100% no-repeat,
+    linear-gradient(rgba(255, 255, 255, .13), rgba(255, 255, 255, .13)) center / 100% 1px no-repeat;
+}
+.dial-arm { left: 50%; top: 50%; height: 2px; margin-top: -1px; transform-origin: 0 50%; background: var(--accent); border-radius: 1px; }
+.dial-dot { left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px var(--accent), 0 1px 4px rgba(0, 0, 0, .5); }
+
+/* ================= 画面上的快捷切换条（机型 + Duo 合上 / 展开、防窥） ================= */
+#quickbar {
+  position: fixed; z-index: 6; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 4px;
+  border-radius: 16px; white-space: nowrap; background: rgba(20, 21, 24, .84);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid var(--line-2); box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+}
+.qb-chip { display: flex; align-items: center; gap: 8px; min-width: 0; height: 38px; padding: 0 12px; border-radius: 12px; background: transparent; }
+.qb-chip:hover { background: var(--raise); }
+.qb-chip[aria-expanded="true"] { background: var(--raise-2); }
+.qb-dots { display: flex; flex: none; }
+.qb-dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .28); }
+.qb-dots i + i { margin-left: -3px; }
+.qb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.qb-caret { flex: none; color: var(--text-2); transition: transform .15s; }
+.qb-chip[aria-expanded="true"] .qb-caret { transform: rotate(180deg); }
+.qb-state { display: flex; flex: none; gap: 2px; padding: 2px; border-radius: 12px; background: rgba(0, 0, 0, .32); }
+.qb-state button { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 10px; background: transparent; color: var(--text-2); }
+.qb-state button:hover { color: var(--text); background: rgba(255, 255, 255, .05); }
+.qb-state button.on { background: var(--sel); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
+.qb-sw { position: relative; flex: none; width: 28px; height: 16px; border-radius: 8px; background: rgba(255, 255, 255, .2); transition: background .2s; }
+.qb-sw::after { content: ""; position: absolute; left: 2px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.qb-state .qb-toggle.on { background: rgba(57, 135, 229, .2); }
+.qb-toggle.on .qb-sw { background: var(--accent); }
+.qb-toggle.on .qb-sw::after { transform: translateX(12px); }
+body[data-layout="sheet"] #quickbar { padding: 3px; gap: 4px; }
+body[data-layout="sheet"] .qb-chip { padding: 0 10px; gap: 6px; height: 40px; }
+body[data-layout="sheet"] .qb-name { max-width: 44vw; }
+body[data-layout="sheet"] .qb-state button { padding: 0 9px; gap: 5px; height: 36px; }
+body.clean #quickbar, body.mode-3d #quickbar, body.mode-3d #picker, body.mode-3d #scrim { display: none !important; }
+
+/* 机型选择：电脑上是快捷条上方的弹出框，手机上是底部弹层 */
+#scrim { position: fixed; inset: 0; z-index: 25; background: transparent; }
+body[data-layout="sheet"] #scrim { background: rgba(0, 0, 0, .42); }
+#picker {
+  position: fixed; z-index: 26; width: 400px; max-height: calc(100vh - 140px); overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 14px; box-sizing: border-box;
+  border-radius: 18px; background: var(--surface-solid); border: 1px solid var(--line-2); box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+}
+body[data-layout="sheet"] #picker {
+  left: 0; right: 0; bottom: 0; width: auto; max-height: 82vh; border-radius: 20px 20px 0 0; border-bottom: 0;
+  padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+}
+.pk-head { display: flex; align-items: center; justify-content: space-between; }
+.pk-head h2 { margin: 0; font-size: 15px; color: var(--text); }
+.pk-close { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border-radius: 20px; background: transparent; color: var(--text-2); }
+#pickSide .key { display: inline-block; width: 8px; height: 8px; margin-right: 6px; vertical-align: 1px; }
+#pickList { display: grid; gap: 6px; }
+.pk-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 8px 4px 4px; border-radius: 12px; background: var(--raise); border: 1px solid transparent; }
+.pk-row.on { background: rgba(57, 135, 229, .12); border-color: rgba(57, 135, 229, .55); }
+.pk-main { flex: 1 1 200px; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 10px; background: transparent; text-align: left; }
+.pk-main:hover { background: transparent; }
+.pk-txt { min-width: 0; }
+.pk-txt b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-txt small { color: var(--muted); font-size: 11.5px; }
+.pk-state { flex: none; margin-left: auto; }
+.pk-state button { padding: 6px 10px; font-size: 12px; }
+.pk-compare { margin-top: 2px; padding: 10px 12px; border-radius: 12px; border: 1px dashed var(--line-2); }
+body[data-layout="sheet"] .pk-state { flex: 1 1 100%; margin: 0 0 6px 46px; }
+body[data-layout="sheet"] .pk-state button { flex: 1; padding: 8px 10px; font-size: 13px; }
+.qb-state .sm { display: none; }
+@media (max-width: 380px) {
+  body[data-layout="sheet"] .qb-state .lg { display: none; }
+  body[data-layout="sheet"] .qb-state .sm { display: inline; }
 }

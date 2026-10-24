@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>可视角度仿真</title>
-<link rel="stylesheet" href="style.css?v=20261025-ui-slim">
+<link rel="stylesheet" href="style.css?v=20261025-quickbar">
 </head>
 <body data-layout="wide">
 <div class="sframe" id="sf0"></div>
@@ -69,12 +69,14 @@
           </div>
           <!-- 离轴角滑块：宽屏在方向盘下方，手机竖屏时移到底部常驻栏（见 app.js applyLayout） -->
           <div class="angle-row" id="angleRow">
+            <!-- 手机竖屏底栏的小方向盘：拖动同时设定方向与离轴角（与上方大方向盘同一映射） -->
+            <button class="dial" id="dial" aria-label="观看方向：拖动选择"><i class="dial-ring"></i><i class="dial-arm" id="dialArm"></i><i class="dial-dot" id="dialDot"></i></button>
             <div class="theta-ctl">
               <div class="row-title"><span>离轴角</span><b id="thetaV">0°</b></div>
               <input type="range" id="theta" min="0" max="70" step="1" value="0" list="thetaTicks" aria-label="离轴角">
               <datalist id="thetaTicks"><option value="0"></option><option value="30"></option><option value="45"></option><option value="60"></option><option value="70"></option></datalist>
             </div>
-            <button id="sweep" class="play" title="自动扫描 0°→70°（空格）"><span class="ico"></span><span class="lbl">扫描</span></button>
+            <button id="sweep" class="play" title="自动扫描 0°→70°（空格）" aria-label="自动扫描"><span class="ico"></span><span class="lbl">扫描</span></button>
           </div>
         </div>
       </div>
@@ -128,8 +130,10 @@
         <button data-v="inner" class="on">内屏</button>
         <button data-v="outer">外屏</button>
       </div>
-      <div class="row-title fold-title"><span>折叠角度</span><b id="foldV">180°</b></div>
-      <input type="range" id="fold" min="0" max="180" step="1" value="180" aria-label="折叠角度">
+      <div id="foldCtl">
+        <div class="row-title fold-title"><span>折叠角度</span><b id="foldV">180°</b></div>
+        <input type="range" id="fold" min="0" max="180" step="1" value="180" aria-label="折叠角度">
+      </div>
       <p class="note" id="duoStatus">内外屏可视角数据待测，当前显示原图。</p>
     </section>
 
@@ -210,6 +214,27 @@
   </div>
 </aside>
 
+<!-- 画面上的快捷切换：机型 + 当前机型的状态（Duo 合上看外屏 / 展开看内屏，防窥开关），电脑和手机都悬浮在手机画面下方 -->
+<div id="quickbar" role="toolbar" aria-label="快捷切换">
+  <button id="devChip" class="qb-chip" aria-haspopup="dialog" aria-expanded="false"><span class="qb-dots" id="devDots"></span><span class="qb-name" id="devName"></span><svg class="qb-caret" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 7.5l3-3 3 3"></path></svg></button>
+  <div class="qb-state" id="qbState"></div>
+</div>
+<div id="scrim" hidden></div>
+<div id="picker" role="dialog" aria-label="选择机型" hidden>
+  <div class="pk-head">
+    <h2>选择机型</h2>
+    <button id="pickerClose" class="pk-close" aria-label="关闭"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"></path></svg></button>
+  </div>
+  <div class="seg" id="pickSide" hidden>
+    <button data-v="0"><span class="key" style="--k:var(--s1)"></span>左侧</button>
+    <button data-v="1"><span class="key" style="--k:var(--s2)"></span>右侧</button>
+  </div>
+  <div id="pickList"></div>
+  <label class="switch-row pk-compare">
+    <span>并排对比<small id="pickCompareHint">再选一台放在右边</small></span>
+    <input type="checkbox" id="pickCompare"><span class="switch"></span>
+  </label>
+</div>
 <div id="tip" role="status"></div>
 <div id="tip2"></div>
 <div class="caption" id="cap0"></div>
@@ -228,6 +253,6 @@
 <script src="phone3d.js?v=20261025-duo-ui"></script>
 <script src="viz.js?v=20261024-duo"></script>
 <!-- 三维场景（scene3d-person.js、scene3d.js）只在进入场景演示时再加载，见 app.js -->
-<script src="app.js?v=20261025-ui-slim"></script>
+<script src="app.js?v=20261025-quickbar"></script>
 </body>
 </html>
