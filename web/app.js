@@ -229,9 +229,15 @@
     const rc = (id) => $(id).getBoundingClientRect();
     if (S.clean) return { x0: 0, x1: W, top: rc('hud').bottom + 8, bottom: H - 12 };
     if (L === 'wide') return { x0: rc('rail').right + 12, x1: rc('panel').left - 12, top: 20, bottom: H - 16 };
-    if (L === 'side') return { x0: 0, x1: rc('panel').left - 8, top: rc('hud').bottom + 8, bottom: H - 16 };
-    return { x0: 0, x1: W, top: rc('hud').bottom + 4, bottom: rc('panel').top - 6 };
+    // 手机竖屏 / 横屏矮窗口：读数与数据卡都在顶部同一行，手机占满其下的区域
+    const capBottom = capDocked() && $('cap0').style.display === 'block' ? rc('cap0').bottom : 0;
+    const top = Math.max(rc('hud').bottom, capBottom) + (L === 'side' ? 8 : 6);
+    if (L === 'side') return { x0: 0, x1: rc('panel').left - 8, top, bottom: H - 16 };
+    return { x0: 0, x1: W, top, bottom: rc('panel').top - 6 };
   }
+  /** 屏幕紧凑（手机竖屏，或手机横屏这类矮窗口）：手机按正对时放满，数据卡停靠到顶部。 */
+  const compactStage = () => document.body.dataset.layout === 'sheet' || window.innerHeight < 520;
+  const capDocked = () => compactStage() && !S.compare && !S.stereo && !S.clean;
 
   /**
    * 每台手机一个区域（对比时左右并排），共用同一缩放以便公平对比。
@@ -245,14 +251,14 @@
     const sheet = document.body.dataset.layout === 'sheet';
     // 数据卡高度按上一帧实测（随布局 / 字号变化），首帧用估计值
     const capEl = $('cap0');
-    const capH = (capEl.offsetHeight || (S.stereo ? 86 : sheet ? 64 : 76)) + 14;
+    const capH = capDocked() ? 0 : (capEl.offsetHeight || (S.stereo ? 86 : sheet ? 64 : 76)) + 14;
     const top = R.top;
     const avail = Math.max(R.bottom - capH - top, 140);
     const areaX0 = R.x0, areaW = Math.max(R.x1 - R.x0, 200);
     const sides = S.stereo ? (S.cross ? [1, -1] : [-1, 1]) : devs.map(() => 0);
     const gap = S.stereo ? S.gap : 0;
     const colMax = S.stereo ? (areaW - gap) / 2 : areaW / n;
-    const halfW = colMax / 2 - (S.stereo ? 10 : 16), halfH = avail / 2;
+    const halfW = colMax / 2 - (S.stereo ? 10 : sheet && n > 1 ? 6 : 16), halfH = avail / 2;
     const D = S.dist;
     const span = (mat) => {
       let mx = 0, my = 0;
@@ -285,7 +291,8 @@
         fEnv = Math.min(fEnv, extent(m));
       }
     }
-    let f = Math.max(fEnv, extent(flat) * 0.75);
+    // 手机竖屏空间宝贵：以正对时放满为准，大角度时允许手机略微伸到上下栏下面
+    let f = Math.max(fEnv, extent(flat) * (compactStage() ? 0.97 : 0.75));
     // 双眼立体：两幅图按全部偏转姿态的投影包络定宽，并排且中间只留 S.gap，
     // 任何角度都不裁切手机，拖动时框也不缩放
     let colW = colMax;
@@ -873,10 +880,18 @@
   function placeCaption(el, v, html) {
     if (el._html !== html) { el.innerHTML = html; el._html = html; }
     el.classList.toggle('stereo', S.stereo);
-    el.style.width = S.stereo ? v.w - 20 + 'px' : '';
+    const dock = capDocked();
+    el.classList.toggle('dock', dock);
+    // 手机竖屏双机对比：数据卡收窄到各自那一栏，避免互相重叠、超出屏幕
+    const narrow = !dock && !S.stereo && document.body.dataset.layout === 'sheet';
+    el.classList.toggle('narrow', narrow);
+    el.style.width = S.stereo ? v.w - 20 + 'px' : narrow ? v.w - 8 + 'px' : '';
     el.style.display = 'block';
-    el.style.left = v.cx + 'px';
-    el.style.top = v.bottomY + 8 + 'px';
+    el.style.left = dock ? '' : v.cx + 'px';
+    el.style.top = dock ? '' : v.bottomY + 8 + 'px';
+    // 停靠时数据卡高度决定手机区域上沿，高度变化后再排一次
+    if (dock && el.offsetHeight !== el._dockH) { el._dockH = el.offsetHeight; requestRender(); }
+    if (!dock) el._dockH = 0;
   }
   /** 双眼立体时左右两块完全相同的背景框，兼作融合时的零视差参照。 */
   function placeFrames() {
@@ -1116,7 +1131,9 @@
     requestRender();
   }
   function syncThetaChips() {
-    document.querySelectorAll('#thetaChips button').forEach((b) => b.classList.toggle('on', Math.abs(+b.dataset.t - S.theta) < 0.5));
+    const el = $('theta');
+    if (el && document.activeElement !== el) el.value = Math.round(S.theta);
+    if ($('thetaV')) $('thetaV').textContent = Math.round(S.theta) + '°';
   }
 
   let anim = null;
@@ -1179,11 +1196,25 @@
 
   // ---------- 布局 ----------
   const SECS = [...document.querySelectorAll('#panelBody .sec')];
+  let sheetSeen = false;
+  function setSheetMin(on) {
+    document.body.classList.toggle('sheet-min', on);
+    $('grab').setAttribute('aria-expanded', String(!on));
+    requestAnimationFrame(() => { pad.draw(); charts.render(); requestRender(); });
+  }
   function applyLayout() {
     const W = window.innerWidth, H = window.innerHeight;
     const L = W >= 1180 && H >= 600 ? 'wide' : W > 760 ? 'side' : 'sheet';
     const body = document.body;
     body.dataset.layout = L;
+    // 手机竖屏：离轴角滑块常驻在底部栏，设置默认收起，画面优先给手机
+    const angleRow = $('angleRow');
+    if (L === 'sheet') {
+      if (angleRow.parentElement !== $('quick')) $('quick').appendChild(angleRow);
+      if (!sheetSeen) { sheetSeen = true; setSheetMin(true); }
+    } else if (angleRow.parentElement !== document.querySelector('.pad-side')) {
+      document.querySelector('.pad-side').appendChild(angleRow);
+    }
     const hud = $('hud'), rail = $('rail'), pb = $('panelBody');
     if (L === 'wide' && !S.clean) {
       if (hud.parentElement !== rail) rail.prepend(hud);
@@ -1201,18 +1232,28 @@
   }
   $('tabs').addEventListener('click', (e) => {
     const b = e.target.closest('button');
-    if (!b) {   // 点抽屉把手：收起 / 展开
-      if (document.body.dataset.layout === 'sheet') { document.body.classList.toggle('sheet-min'); requestRender(); }
-      return;
-    }
+    if (!b) return;
     const sheet = document.body.dataset.layout === 'sheet';
-    if (sheet && b.dataset.tab === S.tab) document.body.classList.toggle('sheet-min');
-    else document.body.classList.remove('sheet-min');
+    // 手机：点分页展开；再点当前分页收起
+    if (sheet) setSheetMin(b.dataset.tab === S.tab && !document.body.classList.contains('sheet-min'));
     S.tab = b.dataset.tab;
     applyTab();
     $('panelBody').scrollTop = 0;
     requestAnimationFrame(() => { pad.draw(); charts.render(); requestRender(); });
   });
+  // 把手：点按切换；上滑展开、下滑收起
+  (() => {
+    const grab = $('grab');
+    let y0 = null;
+    grab.addEventListener('pointerdown', (e) => { y0 = e.clientY; });
+    grab.addEventListener('pointerup', (e) => {
+      if (y0 === null) return;
+      const dy = e.clientY - y0; y0 = null;
+      const min = document.body.classList.contains('sheet-min');
+      setSheetMin(Math.abs(dy) < 12 ? !min : dy > 0);
+    });
+    grab.addEventListener('pointercancel', () => { y0 = null; });
+  })();
   function setClean(on) {
     S.clean = on;
     document.body.classList.toggle('clean', on);
@@ -1278,12 +1319,14 @@
 
   $('dist').addEventListener('input', (e) => setDist(+e.target.value));
   $('sweep').addEventListener('click', toggleSweep);
-  $('thetaChips').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (!b) return;
+  // 离轴角滑块：拖动时直接跟手（沿当前观看方向），不做动画
+  $('theta').max = Math.round(MAX_TILT);
+  $('theta').addEventListener('input', (e) => {
     stopSweep();
-    animateTo(+b.dataset.t, S.psi);
+    cancelAnimationFrame(anim);
+    setView(+e.target.value, S.psi);
   });
+  $('theta').addEventListener('change', (e) => e.target.blur());
 
   function bindSeg(id, fn) {
     $(id).addEventListener('click', (e) => {
@@ -1337,28 +1380,9 @@
     requestRender();
   });
 
-  // 对比的快捷组合：两台机型之间、同一机型防窥前后
-  const PRESETS = (() => {
-    const out = [];
-    for (let i = 0; i < DEVICES.length; i++) for (let j = i + 1; j < DEVICES.length; j++) {
-      out.push({ label: `${shortName(DEVICES[i])} vs ${shortName(DEVICES[j])}`, slots: [pick(DEVICES[i]).id, pick(DEVICES[j]).id] });
-    }
-    for (const d of DEVICES) {
-      if (!hasPrivacy(d)) continue;
-      out.push({ label: `${shortName(d)} ${privacyText(d).short}前后`, slots: [variant(d, false).id, variant(d, true).id] });
-    }
-    for (let i = 0; i < DEVICES.length; i++) for (let j = i + 1; j < DEVICES.length; j++) {
-      if (hasPrivacy(DEVICES[i]) && hasPrivacy(DEVICES[j])) {
-        out.push({ label: `${shortName(DEVICES[i])} vs ${shortName(DEVICES[j])} · 防窥`, slots: [variant(DEVICES[i], true).id, variant(DEVICES[j], true).id] });
-      }
-    }
-    return out;
-  })();
-  $('presets').innerHTML = PRESETS.map((p, i) => `<button data-i="${i}">${p.label}</button>`).join('');
-  $('presets').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (!b) return;
-    S.slots = PRESETS[+b.dataset.i].slots.slice();
+  // 对比：左右两个下拉直接选机型 / 状态，另有一键互换（原先的组合预设列表已去掉）
+  $('swapSlots').addEventListener('click', () => {
+    S.slots = [S.slots[1], S.slots[0]];
     retryFailedModels();
     syncProfileUI();
     requestRender();
@@ -1379,10 +1403,6 @@
     syncSeg('duoSurface', S.duoSurface);
     syncFoldUI();
     [0, 1].forEach((i) => { $('slot' + i).value = S.slots[i]; });
-    document.querySelectorAll('#presets button').forEach((b) => {
-      const p = PRESETS[+b.dataset.i];
-      b.classList.toggle('on', p.slots[0] === S.slots[0] && p.slots[1] === S.slots[1]);
-    });
     syncSeg('compare', S.stereo ? 2 : S.compare ? 1 : 0);
     document.body.classList.toggle('stereo', S.stereo);
     document.title = `可视角度仿真 · ${activeDevices().join(' vs ')}`;
@@ -1401,7 +1421,6 @@
   function syncFoldUI() {
     $('fold').value = Math.round(S.fold);
     $('foldV').textContent = Math.round(S.fold) + '°';
-    $('foldPresets').querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.angle === S.fold));
     const missing = DUO_PROFILES.filter((p) => !p.sets).map((p) => surfaceName(p.surface)).join('、');
     $('duoStatus').textContent = missing ? `${missing}可视角数据待测，当前显示原图。` : DUO_NOTE + '。';
   }
@@ -1431,7 +1450,6 @@
     S.duoSurface=v;syncProfileUI();setFold(v==='outer'?0:180,true);
   });
   $('fold').addEventListener('input', (e) => setFold(e.target.value));
-  $('foldPresets').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setFold(b.dataset.angle,true); });
   bindSeg('compare', (v) => { S.compare = v === '1'; S.stereo = v === '2'; retryFailedModels(); syncProfileUI(); requestRender(); });
   bindSeg('stereoView', (v) => { S.cross = v === '1'; requestRender(); });
   $('size').addEventListener('input', (e) => { S.size = e.target.value / 100; $('sizeV').textContent = e.target.value + '%'; requestRender(); });
