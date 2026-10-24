@@ -1132,7 +1132,7 @@
   }
   function syncThetaChips() {
     const el = $('theta');
-    if (el && document.activeElement !== el) el.value = Math.round(S.theta);
+    if (el) el.value = Math.round(S.theta);   // 滑块步长 1°，拖动时回写的是同一个值，不会跳
     if ($('thetaV')) $('thetaV').textContent = Math.round(S.theta) + '°';
   }
 
