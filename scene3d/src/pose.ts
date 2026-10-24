@@ -154,9 +154,9 @@ export function holdPhoneRight(c: Character, phone: THREE.Matrix4, d: PhoneDims,
   const wrist = new THREE.Vector3().setFromMatrixPosition(hand);
   const handQ = new THREE.Quaternion().setFromRotationMatrix(hand);
   rotateWorld(b.clavicle_r, Z, 6);
-  // 手机举得高 / 远、手臂伸直也差一点时：把肩膀往手机方向带（肩胛前伸 / 上提，最多约 30°）。只动锁骨，头和眼睛不动
+  // 手机举得高 / 远时把肩膀往手机方向带；Duo 开合允许多前伸 9°，头和眼睛不动。
   const armLen = worldPos(b.upperarm_r).distanceTo(worldPos(b.lowerarm_r)) + worldPos(b.lowerarm_r).distanceTo(worldPos(b.hand_r));
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < (d.grip ? 13 : 10); i++) {
     const s0 = worldPos(b.upperarm_r);
     if (s0.distanceTo(wrist) <= armLen - 0.003) break;
     const root = worldPos(b.clavicle_r);

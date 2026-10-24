@@ -348,6 +348,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   let trans: null | { a: Snap; b: SceneState; t0: number; dur: number; p?: number; grip?: [THREE.Matrix4, THREE.Matrix4] | null; gripFor?: SceneState } = null;
   /** 演示序列里的“转动手机”：参数平滑变到目标值 */
   let paramTween: null | { key: string; from: number; to: number; t0: number; dur: number } = null;
+  let foldTween: null | { from:number; to:number; t0:number; dur:number } = null;
 
   /** 按预设和参数摆出目标状态，但不改变当前显示（摆完立刻还原当前姿势）。 */
   const buildState = (p: Preset) => {
@@ -492,7 +493,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const sw = device.colors.map((c) => `<button class="s3d-sw-btn${c.id === cur ? ' on' : ''}" data-color="${c.id}" title="${c.name}" style="--c:${c.swatch}"></button>`).join('');
     box.innerHTML = `<div class="s3d-adjust-h">调整 · ${preset.name}</div>${rows}<div class="s3d-derived" data-k="derived"></div>
       ${device.foldable?`<div class="s3d-row"><span>观察屏幕</span></div><div class="s3d-seg"><button data-surface="inner" class="${duoSurface==='inner'?'on':''}">内屏</button><button data-surface="outer" class="${duoSurface==='outer'?'on':''}">外屏</button></div>
-      <label class="s3d-row"><span>折叠角度</span><b data-out="fold">${fold}°</b></label><input type="range" data-ui="fold" min="0" max="180" step="1" value="${fold}"><div class="s3d-seg"><button data-fold="0">闭合</button><button data-fold="90">半开</button><button data-fold="180">展开</button></div>`:''}
+      <label class="s3d-row"><span>折叠角度</span><b data-out="fold">${Math.round(fold)}°</b></label><input type="range" data-ui="fold" min="0" max="180" step="1" value="${Math.round(fold)}"><div class="s3d-seg"><button data-fold="0">闭合</button><button data-fold="90">半开</button><button data-fold="180">展开</button></div>`:''}
       <div class="s3d-row"><span>机身颜色 · ${device.name}</span></div><div class="s3d-swatches">${sw}</div>
       ${device.model ? '' : `<div class="s3d-derived">外观：${phone.source === 'apple' ? '苹果官网 AR 模型（iPhone 18 Pro 等比放大，仅本机）' : '按官方尺寸参数化建模'}</div>`}
       <label class="s3d-row"><span>播放时每个画面停留</span><b data-out="hold">${hold} 秒</b></label>
@@ -516,11 +517,16 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     const d = state.derived;
     el.textContent = preset.id === 'desk' && d.dist ? `观看距离 ${d.dist.toFixed(0)} cm · 眼睛高出屏幕 ${d.height.toFixed(0)} cm` : '';
   }
-  function setFold(value:number) {
+  function setFold(value:number,animated=false) {
+    const target=THREE.MathUtils.clamp(value,0,180);
+    foldTween=animated&&target!==fold?{from:fold,to:target,t0:performance.now(),dur:800}:null;
+    if(!foldTween)applyFold(target);
+  }
+  function applyFold(value:number) {
     fold=THREE.MathUtils.clamp(value,0,180);phone.setFold?.(fold,duoSurface);
     ctx.dims=dimsOf(device);
     const output=ui.querySelector('[data-out="fold"]'),input=ui.querySelector('[data-ui="fold"]') as HTMLInputElement|null;
-    if(output)output.textContent=fold+'°';if(input)input.value=String(fold);
+    if(output)output.textContent=Math.round(fold)+'°';if(input)input.value=String(Math.round(fold));
     if(trans)trans.b=buildState(preset);
     else if(state)applySteady(buildState(preset),false);
   }
@@ -546,7 +552,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   });
   $('adjust').addEventListener('click', (e) => {
     const folding=(e.target as HTMLElement).closest('[data-fold]') as HTMLElement|null;
-    if(folding){setFold(+folding.dataset.fold!);return;}
+    if(folding){setFold(+folding.dataset.fold!,true);return;}
     const surface=(e.target as HTMLElement).closest('[data-surface]') as HTMLElement|null;
     if(surface){setDuoSurface(surface.dataset.surface as DuoSurface);return;}
     const cb = (e.target as HTMLElement).closest('[data-color]') as HTMLElement | null;
@@ -648,6 +654,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   const setDevice = async (id: string) => {
     const d = DEVICES.find((x) => x.id === id);
     if (!d || d === device) return;
+    foldTween=null;
     segOn('devices', d.id);
     swapping = true;
     try {
@@ -801,7 +808,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       if (st.item) applyItem(st.item);
     },
     onStep: (st) => tl.highlight(st ? { seg: st.seg, idx: st.idx } : null),
-    settled: () => !trans && !rig.busy && !eyeSwitch && !stereo.busy && !paramTween && !swapping && !ann.axisBusy && !camTween,
+    settled: () => !trans && !rig.busy && !eyeSwitch && !stereo.busy && !paramTween && !foldTween && !swapping && !ann.axisBusy && !camTween,
     hold: () => hold,
     setRecording: (on) => {
       host.classList.toggle('recording', on);
@@ -910,6 +917,11 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
 
   const frame = (now: number) => {
     const { W, H } = size();
+    if(foldTween){
+      const k=Math.min(1,(now-foldTween.t0)/foldTween.dur);
+      applyFold(foldTween.from+(foldTween.to-foldTween.from)*ease(k));
+      if(k>=1)foldTween=null;
+    }
     stepTransition(now);
     stepCamTween(now);
     if (paramTween && !trans) {
@@ -1133,7 +1145,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     player,
     get steps() { return steps(); },
     timeline: tl,
-    get settled() { return !trans && !rig.busy && !eyeSwitch && !stereo.busy && !paramTween && !swapping; },
+    get settled() { return !trans && !rig.busy && !eyeSwitch && !stereo.busy && !paramTween && !foldTween && !swapping; },
     get params() { return { ...params[preset.id] }; },
     get viewMode() { return stereo.active && !stereo.leaving ? 'stereo' : rig.mode; },
     /** 检查：从你的眼睛看过去，有多少人物顶点挡在屏幕显示区前面（应为 0） */

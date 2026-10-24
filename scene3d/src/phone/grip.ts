@@ -9,17 +9,16 @@ export interface PhoneGrip {
   T: number;
 }
 
-/** 握住显示面右侧的外缘，折叠后不把两叶包围盒当作掌宽。 */
+/** 始终握住右侧刚性叶片，开合时随叶片转动，不把两叶包围盒当作掌宽。 */
 export function duoGrip(angle: number, surface: 'inner' | 'outer'): PhoneGrip {
   const D = window.DuoGeometry;
   const fold = THREE.MathUtils.clamp(angle, 0, 180);
-  const side = surface === 'inner' ? 1 : -1;
+  const side = 1;
   const leaf = D.leafPose(side, fold), display = D.frame(fold, surface);
-  const center = D.rotate([side * 41.2267335, 0.123715, surface === 'outer' ? -5.24 : 0], leaf.rotation)
+  const center = D.rotate([41.2267335, 0.123715, 0], leaf.rotation)
     .map((n: number, i: number) => n + leaf.position[i]);
   const position = new THREE.Vector3(...D.orient(center, display) as [number, number, number]).multiplyScalar(.001);
-  const frame = new THREE.Matrix4().makeRotationY(leaf.rotation + display.rotation + (surface === 'outer' ? Math.PI : 0)).setPosition(position);
-  const stack = surface === 'outer' ? Math.max(0, Math.cos(fold * Math.PI / 180)) * 5.76116 : 0;
-  const W = .082453467, H = .117949355, T = (5.24 + stack) / 1000;
+  const frame = new THREE.Matrix4().makeRotationY(leaf.rotation + display.rotation).setPosition(position);
+  const W = .082453467, H = .117949355, T = .00524;
   return { frame, W, H, T };
 }

@@ -899,7 +899,7 @@
     $('heroTheta').textContent = Math.round(S.theta) + '°';
     $('heroDir').textContent = S.theta < 0.5 ? '正对屏幕' : `从${Viz.dirName(S.psi)}看`;
     const duo = byId(ids[0]).surface;
-    $('heroSub').textContent = `${duo ? '机身偏转角 · 折叠 ' + S.fold + '°' : '屏幕中心离轴角'} · 观看距离 ${Math.round(S.dist / 10)} cm`;
+    $('heroSub').textContent = `${duo ? '机身偏转角 · 折叠 ' + Math.round(S.fold) + '°' : '屏幕中心离轴角'} · 观看距离 ${Math.round(S.dist / 10)} cm`;
     $('dataTag').textContent = ids.some((id) => !getModel(id)) ? '数据待测' : '实测数据';
     $('legend').classList.toggle('show', S.mode === 2);
     updatePad(M);
@@ -1354,6 +1354,7 @@
   });
 
   function syncProfileUI() {
+    stopFoldAnimation();
     const showPriv = !S.compare && hasPrivacy(S.device);
     $('privacyRow').hidden = !showPriv;
     $('privacyText').textContent = privacyText(S.device).switch;
@@ -1387,21 +1388,35 @@
   });
   $('privacy').addEventListener('change', (e) => { S.privacy = e.target.checked; syncProfileUI(); requestRender(); });
   function syncFoldUI() {
-    $('fold').value = S.fold;
-    $('foldV').textContent = S.fold + '°';
+    $('fold').value = Math.round(S.fold);
+    $('foldV').textContent = Math.round(S.fold) + '°';
     $('foldPresets').querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.angle === S.fold));
     const missing = DUO_PROFILES.filter((p) => !p.sets).map((p) => surfaceName(p.surface)).join('、');
     $('duoStatus').textContent = missing ? `${missing}可视角数据待测，当前显示原图。` : '内外屏各自使用对应的实测数据。';
   }
-  function setFold(angle) {
+  let foldAnimation=null;
+  function stopFoldAnimation() {
+    if(foldAnimation)cancelAnimationFrame(foldAnimation.raf);
+    foldAnimation=null;
+  }
+  function setFold(angle,animated=false) {
+    stopFoldAnimation();
     stopSweep();
-    S.fold = Math.min(180, Math.max(0, +angle));
-    syncFoldUI();
-    requestRender();
+    const target=Math.min(180,Math.max(0,+angle));
+    const apply=(value)=>{S.fold=value;syncFoldUI();requestRender();};
+    if(!animated||target===S.fold){apply(target);return;}
+    const tween=foldAnimation={from:S.fold,to:target,t0:performance.now(),raf:0};
+    const step=(now)=>{
+      if(foldAnimation!==tween)return;
+      const k=Math.min(1,(now-tween.t0)/800),e=k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2;
+      apply(tween.from+(tween.to-tween.from)*e);
+      if(k<1)tween.raf=requestAnimationFrame(step);else foldAnimation=null;
+    };
+    tween.raf=requestAnimationFrame(step);
   }
   bindSeg('duoSurface', (v) => { S.duoSurface = v; syncProfileUI(); requestRender(); });
   $('fold').addEventListener('input', (e) => setFold(e.target.value));
-  $('foldPresets').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setFold(b.dataset.angle); });
+  $('foldPresets').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setFold(b.dataset.angle,true); });
   bindSeg('compare', (v) => { S.compare = v === '1'; S.stereo = v === '2'; retryFailedModels(); syncProfileUI(); requestRender(); });
   bindSeg('stereoView', (v) => { S.cross = v === '1'; requestRender(); });
   $('size').addEventListener('input', (e) => { S.size = e.target.value / 100; $('sizeV').textContent = e.target.value + '%'; requestRender(); });
@@ -1516,6 +1531,7 @@
     document.body.classList.toggle('mode-3d', m === 'scene');
     syncSeg('appMode', m);
     if (m === 'scene') {
+      stopFoldAnimation();
       stopSweep();
       if (scene3d) scene3d.resume();
       else if (!scene3dLoading) {
