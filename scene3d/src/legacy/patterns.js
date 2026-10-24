@@ -346,39 +346,77 @@
     if (inner) duoSettings(g, split, h, c, top);
     if (horizontal) statusBar(g, w, 3, c.text);
 
-    const x = split + 20, width = appWidth - split - 40, right = x + width;
-    const heroY = 84 + top, heroH = width < 450 ? 212 : 184;
-    g.save(); g.beginPath(); g.rect(split, top, appWidth - split, h - top); g.clip();
-    g.fillStyle = c.card; roundRect(g, x, heroY, width, heroH, 18); g.fill();
-    g.fillStyle = '#8e8e93'; roundRect(g, x + 20, heroY + 20, 52, 52, 13); g.fill();
-    glyph(g, 'gear', x + 46, heroY + 46, 52, '#8e8e93');
-    g.fillStyle = c.text; g.font = `600 24px ${FONT}`; g.fillText('通用', x + 20, heroY + 106);
-    g.fillStyle = c.sub; g.font = `400 15px ${FONT}`;
-    let line = '', lineY = heroY + 140;
-    for (const ch of '管理 iPhone 的设置与偏好，包括软件更新、设备语言、CarPlay、隔空投送等。') {
-      if (g.measureText(line + ch).width > width - 40) { g.fillText(line, x + 20, lineY); lineY += 21; line = ''; }
-      line += ch;
-    }
-    if (line) g.fillText(line, x + 20, lineY);
+    if (!inner) {
+      const x = 20, width = appWidth - 40, right = x + width;
+      g.save(); g.beginPath(); g.rect(0, 0, appWidth, h); g.clip();
+      g.fillStyle = c.text; g.font = `700 30px ${FONT}`; g.fillText('设置', x, 40);
+      const accountY = 82, accountH = 114, ar = 32, ax = x + 18 + ar, ay = accountY + accountH / 2;
+      g.fillStyle = c.card; roundRect(g, x, accountY, width, accountH, 18); g.fill();
+      g.save(); g.beginPath(); g.arc(ax, ay, ar, 0, Math.PI * 2); g.clip();
+      if (avatar.naturalWidth) g.drawImage(avatar, ax - ar, ay - ar, 2 * ar, 2 * ar);
+      else { g.fillStyle = '#9aa0ac'; g.fill(); }
+      g.restore();
+      const tx = ax + ar + 14;
+      g.fillStyle = c.text; g.font = `600 22px ${FONT}`; g.fillText('野生的装机宅', tx, ay - 12);
+      g.fillStyle = c.sub; g.font = `400 16px ${FONT}`; g.fillText('@bilibili', tx, ay + 19);
+      chevron(g, right - 17, ay, 1.8, c.chev);
 
-    const group = (y, rows) => {
-      g.fillStyle = c.card; roundRect(g, x, y, width, rows.length * 52, 15); g.fill();
-      rows.forEach(([icon, color, label], i) => {
-        const cy = y + i * 52 + 26;
-        g.fillStyle = color; roundRect(g, x + 16, cy - 13, 26, 26, 6); g.fill();
-        glyph(g, icon, x + 29, cy, 26, color);
-        g.fillStyle = c.text; g.font = `400 17px ${FONT}`; g.fillText(label, x + 54, cy);
-        chevron(g, right - 17, cy, 1.8, c.chev);
-        if (i < rows.length - 1) { g.fillStyle = c.line; g.fillRect(x + 54, y + (i + 1) * 52, width - 54, .5); }
-      });
-    };
-    let y = heroY + heroH + 28;
-    group(y, [['gear', '#8e8e93', '关于本机']]); y += 80;
-    group(y, [['grid', '#007aff', '健康数据'], ['camera', '#8e8e93', '照片图库']]); y += 132;
-    group(y, [['camera', '#8e8e93', '屏幕捕捉']]); y += 80;
-    group(y, [['gear', '#8e8e93', '自动填充与密码']]); y += 80;
-    group(y, [['gear', '#8e8e93', '日期与时间'], ['toggles', '#8e8e93', '键盘'], ['gear', '#8e8e93', '语言与地区']]);
-    g.restore();
+      let y = accountY + accountH + 28;
+      for (const rows of SETTINGS) {
+        g.fillStyle = c.card; roundRect(g, x, y, width, rows.length * 50, 15); g.fill();
+        rows.forEach(([icon, color, label, opt = {}], i) => {
+          const cy = y + i * 50 + 25;
+          g.fillStyle = color; roundRect(g, x + 16, cy - 14, 28, 28, 6); g.fill();
+          glyph(g, icon, x + 30, cy, 28, color);
+          g.fillStyle = c.text; g.font = `400 17px ${FONT}`; g.fillText(label, x + 56, cy);
+          if ('toggle' in opt) toggle(g, right - 16, cy, 3.6, opt.toggle, dark ? '#39393d' : '#e9e9eb');
+          else {
+            chevron(g, right - 17, cy, 1.8, c.chev);
+            if (opt.value) {
+              g.fillStyle = c.sub; g.font = `400 15px ${FONT}`; g.textAlign = 'right';
+              g.fillText(opt.value, right - 33, cy); g.textAlign = 'left';
+            }
+          }
+          if (i < rows.length - 1) { g.fillStyle = c.line; g.fillRect(x + 56, y + (i + 1) * 50, width - 56, .5); }
+        });
+        y += rows.length * 50 + 28;
+      }
+      g.restore();
+    } else {
+      const x = split + 20, width = appWidth - split - 40, right = x + width;
+      const heroY = 84 + top, heroH = width < 450 ? 212 : 184;
+      g.save(); g.beginPath(); g.rect(split, top, appWidth - split, h - top); g.clip();
+      g.fillStyle = c.card; roundRect(g, x, heroY, width, heroH, 18); g.fill();
+      g.fillStyle = '#8e8e93'; roundRect(g, x + 20, heroY + 20, 52, 52, 13); g.fill();
+      glyph(g, 'gear', x + 46, heroY + 46, 52, '#8e8e93');
+      g.fillStyle = c.text; g.font = `600 24px ${FONT}`; g.fillText('通用', x + 20, heroY + 106);
+      g.fillStyle = c.sub; g.font = `400 15px ${FONT}`;
+      let line = '', lineY = heroY + 140;
+      for (const ch of '管理 iPhone 的设置与偏好，包括软件更新、设备语言、CarPlay、隔空投送等。') {
+        if (g.measureText(line + ch).width > width - 40) { g.fillText(line, x + 20, lineY); lineY += 21; line = ''; }
+        line += ch;
+      }
+      if (line) g.fillText(line, x + 20, lineY);
+
+      const group = (y, rows) => {
+        g.fillStyle = c.card; roundRect(g, x, y, width, rows.length * 52, 15); g.fill();
+        rows.forEach(([icon, color, label], i) => {
+          const cy = y + i * 52 + 26;
+          g.fillStyle = color; roundRect(g, x + 16, cy - 13, 26, 26, 6); g.fill();
+          glyph(g, icon, x + 29, cy, 26, color);
+          g.fillStyle = c.text; g.font = `400 17px ${FONT}`; g.fillText(label, x + 54, cy);
+          chevron(g, right - 17, cy, 1.8, c.chev);
+          if (i < rows.length - 1) { g.fillStyle = c.line; g.fillRect(x + 54, y + (i + 1) * 52, width - 54, .5); }
+        });
+      };
+      let y = heroY + heroH + 28;
+      group(y, [['gear', '#8e8e93', '关于本机']]); y += 80;
+      group(y, [['grid', '#007aff', '健康数据'], ['camera', '#8e8e93', '照片图库']]); y += 132;
+      group(y, [['camera', '#8e8e93', '屏幕捕捉']]); y += 80;
+      group(y, [['gear', '#8e8e93', '自动填充与密码']]); y += 80;
+      group(y, [['gear', '#8e8e93', '日期与时间'], ['toggles', '#8e8e93', '键盘'], ['gear', '#8e8e93', '语言与地区']]);
+      g.restore();
+    }
 
     if (!horizontal) {
       const cx = w - 48, timeY = inner ? 24 : 96, cy = inner ? 60 : 128;
@@ -391,11 +429,10 @@
       g.beginPath(); g.arc(cx, cy, 11, -.85 * Math.PI, .85 * Math.PI); g.stroke();
       glyph(g, 'battery', cx, cy, 14, c.float, c.text);
       if (!inner) {
-        const by = 190;
+        const by = h - 42;
         g.save(); g.shadowColor = 'rgba(0,0,0,.08)'; g.shadowBlur = 6; g.shadowOffsetY = 2;
         g.fillStyle = c.float; g.beginPath(); g.arc(cx, by, 22, 0, Math.PI * 2); g.fill(); g.restore();
-        g.strokeStyle = c.text; g.lineWidth = 2.3; g.lineCap = g.lineJoin = 'round';
-        g.beginPath(); g.moveTo(cx + 3, by - 7); g.lineTo(cx - 4, by); g.lineTo(cx + 3, by + 7); g.stroke();
+        glyph(g, 'search', cx, by, 24, c.float, c.text);
       }
     }
     g.restore();
