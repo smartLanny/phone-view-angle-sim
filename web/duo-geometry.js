@@ -1,8 +1,8 @@
 (function (root) {
   'use strict';
   const screens = {
-    // 内屏：防眩光磨砂膜；右上角屏下摄像头（与 holes 相同约定：离中心的横向距离、离上边的距离、半径，毫米）
-    inner: { width: 157.53, height: 110.80, resW: 2670, resH: 1878, corner: 0, cutout: { y: 0, half: 0, r: 0 }, holes: [], matte: true, udc: [70.8, 4.6, 1.8] },
+    // 内屏：防眩光磨砂膜；屏下摄像头在右半屏顶部正中（与 holes 相同约定：离中心的横向距离、离上边的距离、半径，毫米）
+    inner: { width: 157.53, height: 110.80, resW: 2670, resH: 1878, corner: 0, cutout: { y: 0, half: 0, r: 0 }, holes: [], matte: true, udc: [157.53 / 4, 4.6, 1.8] },
     outer: { width: 77.17, height: 112.28, resW: 1398, resH: 2034, corner: 0, cutout: { y: 0, half: 0, r: 0 }, holes: [[30.67, 7.91, 3.045]] },
   };
   const outlines = {

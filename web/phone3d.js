@@ -295,6 +295,32 @@
   }
 
   let duoBase = null;
+  /**
+   * 转轴侧中框：原模型每半机身靠转轴一侧只有背面圆角和一小段竖直侧壁（局部 x = 0、z −4.53 ~ −3.97 mm），
+   * 往屏幕方向是开口（展开时两半在这里对接）。合上时两段侧壁落在同一平面上，中间用一块与侧壁齐平、
+   * 材质与中框相同的盖板连起来，侧面看就是一整条中框；开合过程中盖板两端跟着两侧侧壁的上沿走，
+   * 完全展开时缩成一条线藏在两半机身之间。盖板比侧壁往里缩 0.02 mm，上下两端藏在上下边框的端面后面；
+   * 截面中间微微外凸（合上时约 0.3 mm），抛光金属上能映出一道柔和的高光，读起来和其他几边的中框一样是金属。
+   */
+  const HINGE_WALL_TOP = -3.966, FRAME_LOOK = { tint: [0.89, 0.85062, 0.7832], finish: [1, 0.05, 1, 0] };   // 与中框材质相同
+  function addHingeCover(body, D, angle, f) {
+    const top = (side) => { const L = D.leafPose(side, angle), q = D.rotate([0, 0, HINGE_WALL_TOP], L.rotation); return [q[0] + L.position[0], q[2] + L.position[2]]; };
+    const a = top(-1), b = top(1), len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < 0.05) return;
+    const n = [(b[1] - a[1]) / len, -(b[0] - a[0]) / len];   // 朝外（远离折痕）的法线
+    const u = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+    const inset = 0.02, crown = 0.3 * Math.min(1, len / 8.45), y0 = -58.15, y1 = 58.4, N = 12, base = body.pos.length / 3;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N * 2 - 1, h = crown * (1 - t * t) - inset, dh = -2 * crown * t * 2 / len;   // dh：外凸高度对弦长的导数
+      const p = [a[0] + u[0] * len * (t + 1) / 2 + n[0] * h, a[1] + u[1] * len * (t + 1) / 2 + n[1] * h];
+      const m = [n[0] - u[0] * dh, n[1] - u[1] * dh], ml = Math.hypot(m[0], m[1]);
+      for (const y of [y0, y1]) {
+        body.vert(D.orient([p[0], y, p[1]], f), D.orient([m[0] / ml, 0, m[1] / ml], f, true), 0);
+        body.tint.push(...FRAME_LOOK.tint); body.finish.push(...FRAME_LOOK.finish); body.uv1.push(0, 0); body.texl.push(-1, -1, -1);
+      }
+    }
+    for (let i = 0; i < N; i++) { const k = base + i * 2; body.idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3); }
+  }
   function buildDuo(angle, surface = 'inner', mix) {
     const D=root.DuoGeometry, body=new Mesh(), f=D.frame(angle,surface,mix);
     body.tint=[];body.finish=[];body.uv1=[];body.texl=[];
@@ -312,6 +338,7 @@
       }
       body.idx=duoBase.idx.slice();body.tint=duoBase.tint.slice();body.finish=duoBase.finish.slice();
       body.uv=duoBase.uv.slice();body.uv1=duoBase.uv1.slice();body.texl=duoBase.texl.slice();
+      addHingeCover(body,D,angle,f);
     }
     const back=D.buildScreen('inner',angle,surface,true,mix).mesh,base=body.pos.length/3;
     for(let i=0;i<back.pos.length;i+=3){body.vert(back.pos.slice(i,i+3),back.nor.slice(i,i+3),0);body.tint.push(.004,.004,.004);body.finish.push(0,1,1,0);body.uv1.push(0,0);body.texl.push(-1,-1,-1);}
