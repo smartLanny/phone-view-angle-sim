@@ -374,61 +374,20 @@
   vec3 srgb2lin(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
   vec3 lin2srgb(vec3 c) { c = clamp(c, 0.0, 1.0); return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }`;
 
-  const BODY_VS = `#version 300 es
-  in vec3 aPos;
-  in vec3 aNor;
-  in float aMat;
-  in vec2 aUv;
-  in vec3 aTint;
-  in vec4 aFinish;
-  out vec3 vN;
-  out vec3 vW;
-  out vec2 vUv;
-  out vec3 vTint;
-  out vec4 vFinish;
-  flat out int vMat;
-  ${COMMON_VS}
-  void main() {
-    vW = uModel * aPos;
-    vN = uModel * aNor;
-    vMat = int(aMat + 0.5);
-    vUv = aUv;
-    vTint = aTint;
-    vFinish = aFinish;
-    gl_Position = project(vW);
-  }`;
-
-  const BODY_FS = `#version 300 es
-  precision highp float;
-  in vec3 vN;
-  in vec3 vW;
-  in vec2 vUv;
-  in vec3 vTint;
-  in vec4 vFinish;   // 金属度、粗糙度、不透明度、清漆
-  flat in int vMat;
-  out vec4 outColor;
-  uniform vec3 uEye;
-  uniform vec3 uFrame, uBack;
-  uniform float uRough;
-  uniform sampler2D uBackTex;
-  uniform bool uUseBackTex;
-  uniform bool uNative;
-  uniform int uPass;   // 0 不透明，1 透明（镜头盖玻璃等，预乘 alpha 叠加）
-  ${COLOR_GLSL}
-
-  // ---- 摄影棚环境（只用于机身；屏幕显示走另一套着色器，不受影响）----
-  // 上亮下暗的影棚底色 + 几盏有尺寸的柔光灯：左上前方大柔光箱（主光）、右侧竖灯条、左后轮廓光、顶灯、正前方弱补光。
+  const ENV_GLSL = `
+  // ---- 摄影棚环境：机身着色用；屏幕只在内屏磨砂膜、屏下摄像头的表面反射里用到，显示内容本身不受影响 ----
+  // 上亮下暗的影棚底色 + 几盏有尺寸的柔光灯：左上前方大柔光箱（主光）、右侧竖灯条、左后轮廓光、顶灯、正前方补光。
   // 粗糙度越高，灯在反射里越宽越柔、亮度相应摊薄，金属中框得到连续的明暗渐变，磨砂背板呈缎面质感。
+  // 影棚整体偏亮（天花板、地平线都有一定亮度），抛光金属大部分角度都能映出亮面，读起来是银色而不是黑色。
   vec3 studio(vec3 d) {
-    vec3 floorC = vec3(0.010, 0.011, 0.013), horizon = vec3(0.060, 0.064, 0.072), ceilC = vec3(0.20, 0.205, 0.22);
+    vec3 floorC = vec3(0.016, 0.017, 0.019), horizon = vec3(0.105, 0.108, 0.116), ceilC = vec3(0.36, 0.365, 0.38);
     return d.y < 0.0 ? mix(horizon, floorC, smoothstep(0.0, -0.55, d.y)) : mix(horizon, ceilC, smoothstep(0.0, 0.85, d.y));
   }
   const int NL = 5;
   vec3 LD[NL] = vec3[NL](normalize(vec3(-0.45, 0.72, 0.53)), normalize(vec3(0.97, 0.08, 0.22)), normalize(vec3(-0.90, 0.22, -0.38)),
                          normalize(vec3(0.10, 1.0, -0.05)), normalize(vec3(0.0, 0.12, 1.0)));
-  float LR[NL] = float[NL](0.42, 0.13, 0.16, 0.30, 0.55);   // 灯的角半径（弧度）
-  float LI[NL] = float[NL](2.6, 2.4, 1.7, 1.1, 0.30);
-  // 竖灯条：在水平方向收窄
+  float LR[NL] = float[NL](0.50, 0.15, 0.18, 0.34, 0.60);   // 灯的角半径（弧度）
+  float LI[NL] = float[NL](3.0, 2.8, 1.9, 1.2, 0.55);
   vec3 envSpec(vec3 r, float rough) {
     vec3 c = studio(r);
     float blur = 0.015 + rough * rough * 1.1;
@@ -437,6 +396,7 @@
       float cl = dot(r, L);
       if (cl < 0.0) continue;                        // 背向这盏灯
       float ang = sqrt(max(2.0 * (1.0 - cl), 0.0)); // 小角度近似 acos，省去反三角函数
+      // 竖灯条：在水平方向收窄
       if (i == 1) { vec3 q = r - L * cl; ang = length(vec2(dot(q, normalize(cross(L, vec3(0.0, 1.0, 0.0)))) * 2.6, q.y)); }
       float rad = LR[i];
       float lobe = 1.0 - smoothstep(rad - blur * 0.35, rad + blur, ang);
@@ -445,7 +405,7 @@
     return c;
   }
   vec3 irradiance(vec3 n) {
-    vec3 c = mix(vec3(0.02, 0.021, 0.024), vec3(0.17, 0.175, 0.19), n.y * 0.5 + 0.5);
+    vec3 c = mix(vec3(0.035, 0.036, 0.040), vec3(0.27, 0.275, 0.29), n.y * 0.5 + 0.5);
     for (int i = 0; i < NL; i++) c += LI[i] * LR[i] * LR[i] * 0.55 * max(dot(n, LD[i]), 0.0);
     return c;
   }
@@ -456,6 +416,60 @@
     vec2 AB = vec2(-1.04, 1.04) * a004 + rr.zw;
     return F0 * AB.x + AB.y;
   }
+  `;
+
+  const BODY_VS = `#version 300 es
+  in vec3 aPos;
+  in vec3 aNor;
+  in float aMat;
+  in vec2 aUv;
+  in vec2 aUv1;
+  in vec3 aTexL;
+  in vec3 aTint;
+  in vec4 aFinish;
+  out vec3 vN;
+  out vec3 vW;
+  out vec2 vUv;
+  out vec2 vUv1;
+  out vec3 vTint;
+  out vec4 vFinish;
+  flat out int vMat;
+  flat out vec3 vTexL;
+  ${COMMON_VS}
+  void main() {
+    vW = uModel * aPos;
+    vN = uModel * aNor;
+    vMat = int(aMat + 0.5);
+    vUv = aUv;
+    vUv1 = aUv1;
+    vTexL = aTexL;
+    vTint = aTint;
+    vFinish = aFinish;
+    gl_Position = project(vW);
+  }`;
+
+  const BODY_FS = `#version 300 es
+  precision highp float;
+  in vec3 vN;
+  in vec3 vW;
+  in vec2 vUv;
+  in vec2 vUv1;
+  in vec3 vTint;
+  in vec4 vFinish;   // 金属度、粗糙度、不透明度、清漆
+  flat in int vMat;
+  flat in vec3 vTexL;  // 模型贴图槽（底色、金属度粗糙度、法线）：层号 × 2 + 纹理坐标组，−1 为无贴图
+  uniform mediump sampler2DArray uTexBC, uTexMR, uTexN;
+  out vec4 outColor;
+  uniform vec3 uEye;
+  uniform vec3 uFrame, uBack;
+  uniform float uRough;
+  uniform sampler2D uBackTex;
+  uniform bool uUseBackTex;
+  uniform bool uNative;
+  uniform int uPass;   // 0 不透明，1 透明（镜头盖玻璃等，预乘 alpha 叠加）
+  ${COLOR_GLSL}
+
+  ${ENV_GLSL}
   // 通用材质：底色、金属度、粗糙度、清漆（透明保护层的 4% 反射）
   vec3 shade(vec3 N, vec3 V, vec3 base, float metal, float rough, float coat) {
     float nv = clamp(dot(N, V), 1e-3, 1.0);
@@ -469,10 +483,26 @@
     }
     return col;
   }
+  // 主光在左上方：机身上离主光越远越暗一点，大平面（背板）上出现柔和的明暗过渡，不再是一整片平涂
+  float falloff() { return clamp(1.0 + dot(vW.xy, vec2(-0.0011, 0.0015)), 0.82, 1.18); }
   // 胶片式色调映射（ACES 近似），高光柔和滚降
   vec3 tone(vec3 x) {
     x *= 1.05;
     return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+  }
+
+  // 贴图槽 → 纹理数组坐标（层号 + 所用的那组纹理坐标）
+  vec3 slot(float s) { float l = floor(s * 0.5); return vec3(s - l * 2.0 > 0.5 ? vUv1 : vUv, l); }
+  // 没有切线数据：用屏幕空间导数现场构造切线坐标系（余切框架），把切线空间法线转到世界空间
+  vec3 perturb(vec3 N, vec3 dp1, vec3 dp2, vec2 du1, vec2 du2, vec3 tn) {
+    vec3 dp2p = cross(dp2, N), dp1p = cross(N, dp1);
+    vec3 T = dp2p * du1.x + dp1p * du2.x;
+    vec3 B = dp2p * du1.y + dp1p * du2.y;
+    float m = max(dot(T, T), dot(B, B));
+    if (m < 1e-24) return N;
+    float k = inversesqrt(m);
+    // glTF 法线贴图的 +Y 指向贴图上方，也就是纹理坐标 v 减小的方向
+    return normalize(T * (k * tn.x) - B * (k * tn.y) + N * tn.z);
   }
 
   void main() {
@@ -485,8 +515,19 @@
       if ((uPass == 0) != (op >= 0.99)) discard;
       vec3 base = vTint;
       float metal = clamp(vFinish.x, 0.0, 1.0), rough = vFinish.y, coat = vFinish.w;
+      // 模型自带贴图逐像素采样：底色（含透明度）、G = 粗糙度 / B = 金属度、法线
+      vec3 dp1 = dFdx(vW), dp2 = dFdy(vW);
+      if (vTexL.x >= 0.0) { vec4 t = texture(uTexBC, slot(vTexL.x)); base *= t.rgb; op *= t.a; }
+      if (vTexL.y >= 0.0) { vec4 t = texture(uTexMR, slot(vTexL.y)); rough *= t.g; metal = clamp(metal * t.b, 0.0, 1.0); }
+      if (vTexL.z >= 0.0) {
+        vec3 c = slot(vTexL.z);
+        vec3 tn = texture(uTexN, c).xyz * 2.0 - 1.0;
+        N = perturb(N, dp1, dp2, dFdx(c.xy), dFdy(c.xy), tn);
+        if (dot(N, V) < 0.02) N = normalize(N + V * (0.02 - dot(N, V)));
+        nv = clamp(dot(N, V), 0.0, 1.0);
+      }
       if (uPass == 0) {
-        outColor = vec4(lin2srgb(tone(shade(N, V, base, metal, rough, coat))), 1.0);
+        outColor = vec4(lin2srgb(tone(shade(N, V, base, metal, rough, coat) * falloff())), 1.0);
         return;
       }
       // 透明玻璃：本体按不透明度着色，表面反射直接叠加（预乘 alpha）
@@ -517,7 +558,7 @@
       // 相机模组玻璃 / 镜头：深色镜面玻璃，反射清晰
       col = shade(N, V, vec3(0.006), 0.0, 0.04, 1.0);
     }
-    outColor = vec4(lin2srgb(tone(col)), 1.0);
+    outColor = vec4(lin2srgb(tone(col * falloff())), 1.0);
   }`;
 
   const SCREEN_VS = `#version 300 es
@@ -561,7 +602,17 @@
   uniform sampler2D uPal;   // 256×1 色表（热力图配色，与方向盘一致）
   uniform int uBands;       // >0 时分级显示
   uniform bool uPalFlip;
+  uniform float uMatte;     // 防眩光磨砂膜（Duo 内屏）：1 = 有；0 = 普通镜面玻璃屏，不画表面反射
+  uniform vec3 uUdc;        // 屏下摄像头：中心（屏幕局部坐标，毫米）和半径；半径 0 为没有
   ${COLOR_GLSL}
+  ${ENV_GLSL}
+
+  float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
+  }
 
   vec3 lut(int blk, float th, float ps) {
     float x = clamp(th, 0.0, float(uLutW - 1));
@@ -658,8 +709,28 @@
     if (h0 > 0.0) scr = mix(scr, lens(pp, uHole0, vd), h0);
     if (h1 > 0.0) scr = mix(scr, lens(pp, uHole1, vd), h1);
     if (h2 > 0.0) scr = mix(scr, lens(pp, uHole2, vd), h2);
+    vec3 col = mix(vec3(0.004), scr, screen);
 
-    outColor = vec4(mix(vec3(0.004), scr, screen), 1.0);
+    // 表面反射只加在 Duo 内屏上（显示内容按实测着色，这里只在其上叠加盖板表面反射的环境光）：
+    // 防眩光磨砂膜把影棚灯光打散成一片柔和的雾光，近看有细微颗粒；右上角屏下摄像头区域没有磨砂膜，是一小块镜面，
+    // 能看到清晰的灯光倒影，同时那里的像素稍稀，显示略暗。
+    if (uMatte > 0.0) {
+      vec3 Nw = normalize(uModel * vNormal), V = normalize(uEye - vWorld);
+      float nv = clamp(dot(Nw, V), 1e-3, 1.0);
+      vec3 R = reflect(-V, Nw);
+      float udc = uUdc.z > 0.0 ? 1.0 - smoothstep(uUdc.z - px, uUdc.z + px, length(pp - uUdc.xy)) : 0.0;
+      // 颗粒：约 25 µm 的起伏，像素大于颗粒时逐渐抹平，避免远看闪烁
+      float gs = 0.025, fade = 1.0 - smoothstep(gs * 0.6, gs * 2.0, px);
+      float grain = mix(1.0, 0.65 + 0.7 * vnoise(pp / gs), fade);
+      vec3 haze = envBRDF(vec3(0.04), 0.55, nv) * envSpec(R, 0.55) * grain * 1.15;
+      vec3 mirror = envBRDF(vec3(0.04), 0.03, nv) * envSpec(R, 0.03);
+      // 镜面圆片边缘：磨砂膜开孔的一圈细边，斜看时更明显
+      float ring = udc * (1.0 - smoothstep(0.0, max(px * 1.5, 0.05), uUdc.z - length(pp - uUdc.xy)));
+      vec3 lin = srgb2lin(col) * (1.0 - 0.08 * udc);
+      lin += mix(haze, mirror, udc) + ring * 0.02 * (1.0 - nv * 0.5);
+      col = lin2srgb(lin);
+    }
+    outColor = vec4(col, 1.0);
   }`;
 
   function compile(type, src) {
@@ -683,6 +754,7 @@
     return { p, u };
   }
   const bodyProg = program(BODY_VS, BODY_FS);
+  const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
   const screenProg = program(SCREEN_VS, SCREEN_FS);
 
   function meshVAO(prog, mesh, withNormals) {
@@ -703,6 +775,12 @@
     if (withNormals) {
       attr('aNor', mesh.nor, 3); attr('aMat', mesh.mat, 1); attr('aUv', mesh.uv, 2);
       if (mesh.tint) { attr('aTint', mesh.tint, 3); attr('aFinish', mesh.finish, 4); }
+      if (mesh.texl) { attr('aUv1', mesh.uv1, 2); attr('aTexL', mesh.texl, 3); }
+      else {
+        // 程序生成的机身没有模型贴图
+        const l = gl.getAttribLocation(prog.p, 'aTexL');
+        if (l >= 0) { gl.disableVertexAttribArray(l); gl.vertexAttrib3f(l, -1, -1, -1); }
+      }
     } else {
       attr('aNor', mesh.nor, 3);
       attr('aLocal', mesh.local || mesh.pos.filter((_, i) => i % 3 !== 2), 2);
@@ -726,7 +804,51 @@
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.uniform1i(bodyProg.u.uTexBC, 4);
+  gl.uniform1i(bodyProg.u.uTexMR, 5);
+  gl.uniform1i(bodyProg.u.uTexN, 6);
   gl.useProgram(screenProg.p);
+
+  // 模型贴图：每种用途一个 512² 纹理数组（含多级渐远），各机型一套，第一次绘制时上传
+  const TEX_SIZE = 512;
+  const texCanvas = document.createElement('canvas');
+  texCanvas.width = texCanvas.height = TEX_SIZE;
+  const texCtx = texCanvas.getContext('2d');
+  function texArray(images, srgb) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex);
+    const n = Math.max(images.length, 1), size = images.length ? TEX_SIZE : 1;
+    const levels = Math.floor(Math.log2(size)) + 1;
+    gl.texStorage3D(gl.TEXTURE_2D_ARRAY, levels, srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8, size, size, n);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    if (!images.length) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, 0, 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+    images.forEach((img, layer) => {
+      // 统一缩放到同一尺寸再放进数组；绘制到画布前先清空，保留贴图自带的透明度
+      texCtx.clearRect(0, 0, size, size);
+      texCtx.drawImage(img, 0, 0, size, size);
+      gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, size, size, 1, gl.RGBA, gl.UNSIGNED_BYTE, texCanvas);
+    });
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.BROWSER_DEFAULT_WEBGL);
+    gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    if (aniso) gl.texParameterf(gl.TEXTURE_2D_ARRAY, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+    return tex;
+  }
+  const modelTex = {};
+  function bindModelTextures(model) {
+    const key = model && Phone3D.hasModel(model) ? model : '';
+    if (!modelTex[key]) {
+      const imgs = key ? Phone3D.modelTextures(key) : null;
+      modelTex[key] = [texArray(imgs?.bc || [], true), texArray(imgs?.mr || [], false), texArray(imgs?.n || [], false)];
+    }
+    modelTex[key].forEach((tex, i) => { gl.activeTexture(gl.TEXTURE4 + i); gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex); });
+    gl.activeTexture(gl.TEXTURE0);
+  }
 
   const lutTex = {};
   function bindLUT(id) {
@@ -886,12 +1008,41 @@
       gl.uniform1i(bodyProg.u.uNative, !!v.dev.spec.model);
       const hasBackTexture = v.dev.spec.backTexture && bindBackTexture(v.dev.spec.backTexture);
       gl.uniform1i(bodyProg.u.uUseBackTex, hasBackTexture ? 1 : 0);
+      bindModelTextures(v.dev.spec.model);
       gl.bindVertexArray(v.dev.body.vao);
       setCommon(bodyProg, M, v);
       gl.uniform1i(bodyProg.u.uPass, 0);
       gl.drawElements(gl.TRIANGLES, v.dev.body.count, gl.UNSIGNED_INT, 0);
     }
 
+    // 透明通道：模型里的镜头盖玻璃、闪光灯罩、背板磨砂覆层等，在不透明部分之后、屏幕之前叠加（不写深度）。
+    // 放在屏幕之前画：覆层被多边形偏移拉近后，侧对视线的侧壁偶尔会落到屏幕前面，随后画的屏幕会把它盖掉；
+    // 真正挡住屏幕的机身是不透明部分，已经写入深度，屏幕照样被挡住。
+    const glassy = views.filter((v) => v.dev.spec.model);
+    if (glassy.length) {
+      gl.useProgram(bodyProg.p);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.depthMask(false);
+      gl.depthFunc(gl.LEQUAL);
+      // 覆层与下面的玻璃壳在网格细分上有微小起伏，略微拉近，避免局部被遮住出现块状花纹
+      gl.enable(gl.POLYGON_OFFSET_FILL);
+      gl.polygonOffset(-2, -24);
+      gl.uniform1i(bodyProg.u.uPass, 1);
+      for (const v of glassy) {
+        clip(v);
+        gl.uniform1i(bodyProg.u.uNative, 1);
+        gl.uniform1i(bodyProg.u.uUseBackTex, 0);
+        bindModelTextures(v.dev.spec.model);
+        gl.bindVertexArray(v.dev.body.vao);
+        setCommon(bodyProg, M, v);
+        gl.drawElements(gl.TRIANGLES, v.dev.body.count, gl.UNSIGNED_INT, 0);
+      }
+      gl.disable(gl.POLYGON_OFFSET_FILL);
+      gl.depthMask(true);
+      gl.depthFunc(gl.LESS);
+      gl.disable(gl.BLEND);
+    }
     gl.useProgram(screenProg.p);
     gl.uniform1f(screenProg.u.uRot, S.rot);
     const P = Viz.palette(S.pal);
@@ -906,6 +1057,9 @@
         gl.uniform1i(screenProg.u.uMode, S.mode === 0 && !getModel(id) ? 1 : S.mode);
         gl.uniform2fv(screenProg.u.uScreenHalf, screen.screenHalf);
         gl.uniform1f(screenProg.u.uCorner, screen.corner);
+        const udc = screen.udc;
+        gl.uniform1f(screenProg.u.uMatte, screen.matte ? 1 : 0);
+        gl.uniform3f(screenProg.u.uUdc, udc ? udc[0] : 0, udc ? screen.screenHalf[1] - udc[1] : 0, udc ? udc[2] : 0);
         gl.uniform3f(screenProg.u.uCut, cut.y, cut.half, cut.r);
         const holes = screen.holes || [];
         for (let h = 0; h < 3; h++) {
@@ -922,31 +1076,6 @@
         gl.drawElements(gl.TRIANGLES, screen.screen.count, gl.UNSIGNED_INT, 0);
       }
     });
-    // 透明通道：模型里的镜头盖玻璃、闪光灯罩等，在不透明部分和屏幕之后叠加反射（不写深度）
-    const glassy = views.filter((v) => v.dev.spec.model);
-    if (glassy.length) {
-      gl.useProgram(bodyProg.p);
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      gl.depthMask(false);
-      gl.depthFunc(gl.LEQUAL);
-      // 覆层与下面的玻璃壳在网格细分上有微小起伏，略微拉近，避免局部被遮住出现块状花纹
-      gl.enable(gl.POLYGON_OFFSET_FILL);
-      gl.polygonOffset(-2, -24);
-      gl.uniform1i(bodyProg.u.uPass, 1);
-      for (const v of glassy) {
-        clip(v);
-        gl.uniform1i(bodyProg.u.uNative, 1);
-        gl.uniform1i(bodyProg.u.uUseBackTex, 0);
-        gl.bindVertexArray(v.dev.body.vao);
-        setCommon(bodyProg, M, v);
-        gl.drawElements(gl.TRIANGLES, v.dev.body.count, gl.UNSIGNED_INT, 0);
-      }
-      gl.disable(gl.POLYGON_OFFSET_FILL);
-      gl.depthMask(true);
-      gl.depthFunc(gl.LESS);
-      gl.disable(gl.BLEND);
-    }
     gl.bindVertexArray(null);
     gl.disable(gl.SCISSOR_TEST);
 

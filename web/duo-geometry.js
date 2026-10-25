@@ -1,7 +1,8 @@
 (function (root) {
   'use strict';
   const screens = {
-    inner: { width: 157.53, height: 110.80, resW: 2670, resH: 1878, corner: 0, cutout: { y: 0, half: 0, r: 0 }, holes: [] },
+    // 内屏：防眩光磨砂膜；右上角屏下摄像头（与 holes 相同约定：离中心的横向距离、离上边的距离、半径，毫米）
+    inner: { width: 157.53, height: 110.80, resW: 2670, resH: 1878, corner: 0, cutout: { y: 0, half: 0, r: 0 }, holes: [], matte: true, udc: [70.8, 4.6, 1.8] },
     outer: { width: 77.17, height: 112.28, resW: 1398, resH: 2034, corner: 0, cutout: { y: 0, half: 0, r: 0 }, holes: [[30.67, 7.91, 3.045]] },
   };
   const outlines = {
@@ -103,14 +104,16 @@
         let p;
         if(key==='outer'&&!backing) p=surfaceFrame(key,x/d.width+.5,v,angle);
         else p=foldPoint(x,y,angle);
-        const offset=backing?-.025:.025;
+        // 显示面抬高 0.2 mm：模型自带黑色面板顶面约 0.115 mm，残余折痕最深下凹约 0.057 mm，抬高后显示面始终在面板之上
+        const offset=backing?-.025:.2;
         mesh.pos.push(...orient(p.point.map((n,k)=>n+offset*p.normal[k]),f));
         mesh.nor.push(...orient(p.normal,f,true));mesh.tangent.push(...orient(p.tangentU,f,true));
         mesh.local.push(x,y);mesh.uv.push(x/d.width+.5,v);
       }
     }
     for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const a=j*(nx+1)+i,b=a+nx+1;mesh.idx.push(a,a+1,b,a+1,b+1,b);}
-    return {key,mesh,screenHalf:[d.width/2,d.height/2],corner:d.corner,cutout:backing?{y:0,half:0,r:0}:screens[key].cutout,holes:backing?[]:screens[key].holes};
+    return {key,mesh,screenHalf:[d.width/2,d.height/2],corner:d.corner,cutout:backing?{y:0,half:0,r:0}:screens[key].cutout,holes:backing?[]:screens[key].holes,
+      matte:!backing&&!!d.matte,udc:backing?null:d.udc||null};
   }
   root.DuoGeometry={screens,foldPoint,leafPose,surfaceFrame,frame,orient,rotate,buildScreen,halfCrease,residual,residualPoint};
 })(window);
