@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>可视角度仿真</title>
-<link rel="stylesheet" href="style.css?v=20261025-quickbar">
+<link rel="stylesheet" href="style.css?v=20261025-qcard">
 </head>
 <body data-layout="wide">
 <div class="sframe" id="sf0"></div>
@@ -34,7 +34,7 @@
 <aside id="rail" aria-label="视角"></aside>
 
 <aside id="panel" aria-label="设置">
-  <!-- 手机竖屏：常驻的把手 + 离轴角滑块，设置内容默认收起，把画面留给手机 -->
+  <!-- 手机竖屏：常驻的把手 + 分页，设置内容默认收起，把画面留给手机（视角直接拖动手机调整） -->
   <div id="quick">
     <button id="grab" aria-label="展开 / 收起设置" aria-expanded="false"><span></span></button>
   </div>
@@ -50,6 +50,7 @@
     <section class="sec" data-tab="view" id="secPad">
       <div class="sec-head">
         <h2>观看方向</h2>
+        <button id="sweep" class="play mini-play" title="自动扫描 0°→70°（空格）" aria-label="自动扫描"><span class="ico"></span><span class="lbl">扫描</span></button>
         <div class="seg mini" id="padMetric">
           <button data-v="lum" class="on">亮度</button>
           <button data-v="jncd">色偏</button>
@@ -66,17 +67,6 @@
               <div class="ramp-ticks" id="padTicks"></div>
             </div>
             <select id="palette" class="mini-select" aria-label="热力图配色" title="热力图配色（方向盘与离轴角分布共用）"></select>
-          </div>
-          <!-- 离轴角滑块：宽屏在方向盘下方，手机竖屏时移到底部常驻栏（见 app.js applyLayout） -->
-          <div class="angle-row" id="angleRow">
-            <!-- 手机竖屏底栏的小方向盘：拖动同时设定方向与离轴角（与上方大方向盘同一映射） -->
-            <button class="dial" id="dial" aria-label="观看方向：拖动选择"><i class="dial-ring"></i><i class="dial-arm" id="dialArm"></i><i class="dial-dot" id="dialDot"></i></button>
-            <div class="theta-ctl">
-              <div class="row-title"><span>离轴角</span><b id="thetaV">0°</b></div>
-              <input type="range" id="theta" min="0" max="70" step="1" value="0" list="thetaTicks" aria-label="离轴角">
-              <datalist id="thetaTicks"><option value="0"></option><option value="30"></option><option value="45"></option><option value="60"></option><option value="70"></option></datalist>
-            </div>
-            <button id="sweep" class="play" title="自动扫描 0°→70°（空格）" aria-label="自动扫描"><span class="ico"></span><span class="lbl">扫描</span></button>
           </div>
         </div>
       </div>
@@ -109,10 +99,7 @@
     <section class="sec" data-tab="device" id="secDevice">
       <h2>机型</h2>
       <div class="dev-cards" id="devCards"></div>
-      <label class="switch-row" id="privacyRow">
-        <span><span id="privacyText">防窥模式</span><small id="privacyHint"></small></span>
-        <input type="checkbox" id="privacy"><span class="switch"></span>
-      </label>
+      <p class="note">防窥、贴膜和 Duo 的开合在手机画面下方的快捷卡片上切换。</p>
     </section>
 
     <section class="sec" data-tab="device" id="secSlots" hidden>
@@ -125,15 +112,7 @@
     </section>
 
     <section class="sec" data-tab="device" id="secFold" hidden>
-      <h2>iPhone Duo</h2>
-      <div class="seg" id="duoSurface" aria-label="观察屏幕">
-        <button data-v="inner" class="on">内屏</button>
-        <button data-v="outer">外屏</button>
-      </div>
-      <div id="foldCtl">
-        <div class="row-title fold-title"><span>折叠角度</span><b id="foldV">180°</b></div>
-        <input type="range" id="fold" min="0" max="180" step="1" value="180" aria-label="折叠角度">
-      </div>
+      <h2>iPhone Duo 数据</h2>
       <p class="note" id="duoStatus">内外屏可视角数据待测，当前显示原图。</p>
     </section>
 
@@ -214,10 +193,18 @@
   </div>
 </aside>
 
-<!-- 画面上的快捷切换：机型 + 当前机型的状态（Duo 合上看外屏 / 展开看内屏，防窥开关），电脑和手机都悬浮在手机画面下方 -->
-<div id="quickbar" role="toolbar" aria-label="快捷切换">
-  <button id="devChip" class="qb-chip" aria-haspopup="dialog" aria-expanded="false"><span class="qb-dots" id="devDots"></span><span class="qb-name" id="devName"></span><svg class="qb-caret" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 7.5l3-3 3 3"></path></svg></button>
-  <div class="qb-state" id="qbState"></div>
+<!-- 画面下方的快捷卡片：机型 + iOS 风格开关（Duo 展开 / 防窥），Duo 另有展开角度滑条（0° = 合上看外屏）；电脑和手机都悬浮在手机画面下方 -->
+<div id="quickbar" role="group" aria-label="快捷切换">
+  <div class="qc-row">
+    <button id="devChip" class="qb-chip" aria-haspopup="dialog" aria-expanded="false"><span class="qb-dots" id="devDots"></span><span class="qb-name" id="devName"></span><svg class="qb-caret" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 7.5l3-3 3 3"></path></svg></button>
+    <button id="qcSwitch" class="qc-switch" role="switch" aria-checked="false"><span class="qc-lbl" id="qcLbl"></span><span class="switch" aria-hidden="true"></span></button>
+  </div>
+  <div class="qc-fold" id="qcFold">
+    <svg class="qc-ico" width="12" height="16" viewBox="0 0 12 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="13" rx="2.2"></rect></svg>
+    <input type="range" id="fold" min="0" max="180" step="1" value="180" aria-label="展开角度">
+    <svg class="qc-ico" width="20" height="16" viewBox="0 0 20 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.5" y="1.5" width="17" height="13" rx="2.2"></rect><path d="M10 2v12" stroke-dasharray="1.6 1.8"></path></svg>
+    <b id="foldV">180°</b>
+  </div>
 </div>
 <div id="scrim" hidden></div>
 <div id="picker" role="dialog" aria-label="选择机型" hidden>
@@ -253,6 +240,6 @@
 <script src="phone3d.js?v=20261025-duo-ui"></script>
 <script src="viz.js?v=20261024-duo"></script>
 <!-- 三维场景（scene3d-person.js、scene3d.js）只在进入场景演示时再加载，见 app.js -->
-<script src="app.js?v=20261025-quickbar"></script>
+<script src="app.js?v=20261025-qcard"></script>
 </body>
 </html>

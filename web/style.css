@@ -106,13 +106,14 @@ select option { background: #1b1d22; }
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; padding: 12px 0 0; }
 .switch-row small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
 .switch-row input { position: absolute; opacity: 0; pointer-events: none; }
-.switch { position: relative; flex: none; width: 40px; height: 24px; border-radius: 12px; background: rgba(255, 255, 255, .16); transition: background .2s; }
+/* iOS 风格开关（51 × 31，开为系统绿），面板和画面下方的快捷卡片共用 */
+.switch { position: relative; flex: none; width: 51px; height: 31px; border-radius: 16px; background: rgba(120, 120, 128, .36); transition: background .25s ease; }
 .switch::after {
-  content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%;
-  background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+  content: ""; position: absolute; left: 2px; top: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .18), 0 1px 1px rgba(0, 0, 0, .12); transition: transform .28s cubic-bezier(.3, .7, .4, 1);
 }
-.switch-row input:checked + .switch { background: var(--accent); }
-.switch-row input:checked + .switch::after { transform: translateX(16px); }
+.switch-row input:checked + .switch, [aria-checked="true"] > .switch { background: #30d158; }
+.switch-row input:checked + .switch::after, [aria-checked="true"] > .switch::after { transform: translateX(20px); }
 
 /* 机型卡片 */
 .dev-cards { display: grid; gap: 6px; }
@@ -159,12 +160,7 @@ select option { background: #1b1d22; }
 .mini-select { width: auto; flex: none; padding: 3px 6px; font-size: 12px; border-radius: 7px; }
 .ramp { height: 6px; border-radius: 3px; }
 .ramp-ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 3px; font-variant-numeric: tabular-nums; }
-.angle-row { display: flex; align-items: flex-end; gap: 12px; margin-top: 14px; }
-.theta-ctl { flex: 1; min-width: 0; }
-.theta-ctl .row-title { margin: 0 0 2px; }
-.theta-ctl .row-title b { font-size: 15px; }
-.theta-ctl input { display: block; margin: 2px 0 0; }
-.angle-row .play { margin-bottom: 1px; }
+.sec-head .mini-play { margin-left: auto; padding: 3px 10px; font-size: 12px; }
 .play { display: flex; align-items: center; gap: 6px; flex: none; padding: 5px 10px; }
 .play .ico { width: 0; height: 0; border-left: 8px solid currentColor; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
 .play.on { background: var(--accent); }
@@ -244,7 +240,8 @@ select option { background: #1b1d22; }
   background: rgba(16, 17, 20, .6); border: 1px solid var(--line); transition: opacity .6s;
 }
 #hint.gone { opacity: 0; }
-body:not([data-layout="wide"]) #hint, body.clean #hint { display: none; }
+body[data-layout="side"] #hint, body.clean #hint { display: none; }
+body[data-layout="sheet"] #hint { top: calc(max(10px, env(safe-area-inset-top)) + 66px); font-size: 12.5px; color: var(--text); background: rgba(20, 21, 24, .78); }
 
 /* 双眼立体：页面底色均匀，两块完全相同的背景框供双眼融合 */
 body.stereo { background: #0f1115; }
@@ -302,12 +299,6 @@ body[data-layout="sheet"] #quick { display: block; padding: 0 16px 6px; backgrou
 #grab { display: block; width: 100%; height: 22px; padding: 0; background: transparent; border-radius: 0; touch-action: none; }
 #grab span { display: block; width: 38px; height: 5px; margin: 7px auto 0; border-radius: 3px; background: rgba(255, 255, 255, .24); }
 #grab:hover { background: transparent; }
-body[data-layout="sheet"] #quick .angle-row { margin-top: 0; gap: 12px; align-items: center; }
-body[data-layout="sheet"] #quick .theta-ctl .row-title { margin: 0 0 4px; }
-body[data-layout="sheet"] #quick .theta-ctl .row-title b { font-size: 16px; }
-body[data-layout="sheet"] #quick .theta-ctl input { height: 24px; margin: 0; }
-body[data-layout="sheet"] #quick .play { margin: 0; width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 12px; }
-body[data-layout="sheet"] #quick .play .lbl { display: none; }
 body[data-layout="sheet"] #panelBody { overflow-y: auto; overscroll-behavior: contain; }
 body[data-layout="sheet"] #tabs { padding: 4px 12px 8px; border-bottom: 1px solid var(--line); }
 body[data-layout="sheet"] #tabs button { padding: 8px 4px; }
@@ -388,29 +379,16 @@ body.mode-3d #tip, body.mode-3d #tip2, body.mode-3d #hint, body.mode-3d .sframe 
   .app-mode button { padding: 6px 10px; font-size: 12px; }
 }
 
-/* ================= 手机底栏的小方向盘 ================= */
-.dial { display: none; }
-body[data-layout="sheet"] #quick .dial {
-  display: block; position: relative; flex: none; width: 52px; height: 52px; padding: 0; border-radius: 50%;
-  background: #0d0f12; border: 1px solid var(--line-2); touch-action: none; cursor: grab;
-}
-.dial i { position: absolute; display: block; pointer-events: none; }
-.dial-ring {
-  inset: 6px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .12);
-  background: linear-gradient(rgba(255, 255, 255, .13), rgba(255, 255, 255, .13)) center / 1px 100% no-repeat,
-    linear-gradient(rgba(255, 255, 255, .13), rgba(255, 255, 255, .13)) center / 100% 1px no-repeat;
-}
-.dial-arm { left: 50%; top: 50%; height: 2px; margin-top: -1px; transform-origin: 0 50%; background: var(--accent); border-radius: 1px; }
-.dial-dot { left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px var(--accent), 0 1px 4px rgba(0, 0, 0, .5); }
-
-/* ================= 画面上的快捷切换条（机型 + Duo 合上 / 展开、防窥） ================= */
+/* ================= 画面下方的快捷卡片（机型 + Duo 展开 / 防窥开关 + Duo 展开角度） ================= */
 #quickbar {
-  position: fixed; z-index: 6; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 4px;
-  border-radius: 16px; white-space: nowrap; background: rgba(20, 21, 24, .84);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2);
-  border: 1px solid var(--line-2); box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+  position: fixed; z-index: 6; transform: translateX(-50%); display: flex; flex-direction: column; gap: 2px;
+  width: 400px; padding: 6px; box-sizing: border-box; border-radius: 18px; background: rgba(20, 21, 24, .86);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2); backdrop-filter: blur(18px) saturate(1.2);
+  border: 1px solid var(--line-2); box-shadow: 0 14px 36px rgba(0, 0, 0, .45);
 }
-.qb-chip { display: flex; align-items: center; gap: 8px; min-width: 0; height: 38px; padding: 0 12px; border-radius: 12px; background: transparent; }
+#quickbar.solo { width: auto; }
+.qc-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.qb-chip { display: flex; align-items: center; gap: 8px; min-width: 0; height: 40px; padding: 0 12px; border-radius: 12px; background: transparent; white-space: nowrap; }
 .qb-chip:hover { background: var(--raise); }
 .qb-chip[aria-expanded="true"] { background: var(--raise-2); }
 .qb-dots { display: flex; flex: none; }
@@ -419,19 +397,16 @@ body[data-layout="sheet"] #quick .dial {
 .qb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .qb-caret { flex: none; color: var(--text-2); transition: transform .15s; }
 .qb-chip[aria-expanded="true"] .qb-caret { transform: rotate(180deg); }
-.qb-state { display: flex; flex: none; gap: 2px; padding: 2px; border-radius: 12px; background: rgba(0, 0, 0, .32); }
-.qb-state button { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 10px; background: transparent; color: var(--text-2); }
-.qb-state button:hover { color: var(--text); background: rgba(255, 255, 255, .05); }
-.qb-state button.on { background: var(--sel); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
-.qb-sw { position: relative; flex: none; width: 28px; height: 16px; border-radius: 8px; background: rgba(255, 255, 255, .2); transition: background .2s; }
-.qb-sw::after { content: ""; position: absolute; left: 2px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: transform .2s; }
-.qb-state .qb-toggle.on { background: rgba(57, 135, 229, .2); }
-.qb-toggle.on .qb-sw { background: var(--accent); }
-.qb-toggle.on .qb-sw::after { transform: translateX(12px); }
-body[data-layout="sheet"] #quickbar { padding: 3px; gap: 4px; }
-body[data-layout="sheet"] .qb-chip { padding: 0 10px; gap: 6px; height: 40px; }
-body[data-layout="sheet"] .qb-name { max-width: 44vw; }
-body[data-layout="sheet"] .qb-state button { padding: 0 9px; gap: 5px; height: 36px; }
+.qc-switch { display: flex; align-items: center; gap: 10px; flex: none; height: 44px; padding: 0 6px 0 12px; border-radius: 12px; background: transparent; color: var(--text-2); white-space: nowrap; }
+.qc-switch:hover { background: transparent; color: var(--text); }
+.qc-switch[aria-checked="true"] { color: var(--text); }
+.qc-fold { display: flex; align-items: center; gap: 10px; padding: 2px 12px 6px; color: var(--text-2); }
+.qc-fold input { flex: 1; min-width: 0; margin: 0; height: 28px; }
+.qc-fold b { flex: none; width: 3em; text-align: right; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.qc-ico { flex: none; }
+body[data-layout="sheet"] #quickbar { width: calc(100vw - 24px); padding: 4px; }
+body[data-layout="sheet"] #quickbar.solo { width: auto; }
+body[data-layout="sheet"] .qb-chip { padding: 0 10px; }
 body.clean #quickbar, body.mode-3d #quickbar, body.mode-3d #picker, body.mode-3d #scrim { display: none !important; }
 
 /* 机型选择：电脑上是快捷条上方的弹出框，手机上是底部弹层 */
@@ -463,8 +438,9 @@ body[data-layout="sheet"] #picker {
 .pk-compare { margin-top: 2px; padding: 10px 12px; border-radius: 12px; border: 1px dashed var(--line-2); }
 body[data-layout="sheet"] .pk-state { flex: 1 1 100%; margin: 0 0 6px 46px; }
 body[data-layout="sheet"] .pk-state button { flex: 1; padding: 8px 10px; font-size: 13px; }
-.qb-state .sm { display: none; }
-@media (max-width: 380px) {
-  body[data-layout="sheet"] .qb-state .lg { display: none; }
-  body[data-layout="sheet"] .qb-state .sm { display: inline; }
+/* 手机横屏等矮窗口：Duo 卡片压成一行（机型 · 展开开关 · 角度滑条） */
+@media (max-height: 519px) {
+  #quickbar.duo { flex-direction: row; align-items: center; width: 640px; }
+  #quickbar.duo .qc-row { flex: none; }
+  #quickbar.duo .qc-fold { flex: 1; min-width: 160px; padding: 0 8px 0 4px; }
 }
