@@ -151,7 +151,8 @@
     const duo = name === 'iPhone Duo', key = duo ? `${name}|${surface}` : name;
     const mix=duo&&!S.compare?surfaceMix:undefined;
     const fold = duo ? foldFor(surface) : S.fold;
-    if (devCache[key] && (!duo || (devCache[key].fold === fold && devCache[key].frameMix === mix))) return devCache[key];
+    const variant = colorOf(name).variant || '';   // 原模型的颜色变体（如 Duo 的夜空色）
+    if (devCache[key] && devCache[key].variant === variant && (!duo || (devCache[key].fold === fold && devCache[key].frameMix === mix))) return devCache[key];
     if (devCache[key]) dropDev(key);
     const spec = specOf(name);
     if (spec.model && !Phone3D.hasModel(spec.model) && !pendingModels.has(spec.model) && !failedModels.has(spec.model)) {
@@ -164,7 +165,7 @@
         toast(err.message);
       }).finally(() => pendingModels.delete(spec.model));
     }
-    const phone = duo ? Phone3D.buildDuo(fold, surface, mix) : Phone3D.build(spec.body, spec.model);
+    const phone = duo ? Phone3D.buildDuo(fold, surface, mix, variant) : Phone3D.build(spec.body, spec.model, variant);
     const P = phone.spec, sc = duo ? spec.screens[surface] : spec.screen;
     const ratio = sc.resH / sc.resW;
     const w = (sc.diag * 25.4) / Math.sqrt(1 + ratio * ratio);
@@ -179,7 +180,7 @@
     }
     const screens = duo ? phone.screens : [{ mesh: phone.screen, screenHalf: sc.half || [w / 2, (w * ratio) / 2], corner: sc.corner, cutout: spec.cutout, holes: sc.holes }];
     return (devCache[key] = {
-      name, spec, corners, fitCorners, fold, surface, frameMix:mix,
+      name, spec, corners, fitCorners, fold, surface, frameMix:mix, variant,
       screenHalf: sc.half || [w / 2, (w * ratio) / 2],
       body: meshVAO(bodyProg, phone.body, true),
       surfaceFrame: phone.surfaceFrame,
@@ -431,7 +432,7 @@
   in float aMat;
   in vec2 aUv;
   in vec2 aUv1;
-  in vec3 aTexL;
+  in vec4 aTexL;
   in vec3 aTint;
   in vec4 aFinish;
   out vec3 vN;
@@ -441,7 +442,7 @@
   out vec3 vTint;
   out vec4 vFinish;
   flat out int vMat;
-  flat out vec3 vTexL;
+  flat out vec4 vTexL;
   ${COMMON_VS}
   void main() {
     vW = uModel * aPos;
@@ -464,8 +465,9 @@
   in vec3 vTint;
   in vec4 vFinish;   // 金属度、粗糙度、不透明度、清漆
   flat in int vMat;
-  flat in vec3 vTexL;  // 模型贴图槽（底色、金属度粗糙度、法线）：层号 × 2 + 纹理坐标组，−1 为无贴图
-  uniform mediump sampler2DArray uTexBC, uTexMR, uTexN;
+  flat in vec4 vTexL;  // 模型贴图槽（底色、金属度粗糙度、法线、环境光遮蔽）：层号 × 4 + 纹理坐标组 + 2 × 双姿态 AO，−1 为无贴图
+  uniform mediump sampler2DArray uTexBC, uTexMR, uTexN, uTexAO;
+  uniform float uClosed;   // Duo 合上程度（0 展开 … 1 合上），在展开 / 合上两张 AO 之间混合
   out vec4 outColor;
   uniform vec3 uEye;
   uniform vec3 uFrame, uBack;
@@ -499,7 +501,7 @@
   }
 
   // 贴图槽 → 纹理数组坐标（层号 + 所用的那组纹理坐标）
-  vec3 slot(float s) { float l = floor(s * 0.5); return vec3(s - l * 2.0 > 0.5 ? vUv1 : vUv, l); }
+  vec3 slot(float s) { float l = floor(s * 0.25), r = s - l * 4.0; return vec3(mod(r, 2.0) > 0.5 ? vUv1 : vUv, l); }
   // 没有切线数据：用屏幕空间导数现场构造切线坐标系（余切框架），把切线空间法线转到世界空间
   vec3 perturb(vec3 N, vec3 dp1, vec3 dp2, vec2 du1, vec2 du2, vec3 tn) {
     vec3 dp2p = cross(dp2, N), dp1p = cross(N, dp1);
@@ -526,6 +528,12 @@
       vec3 dp1 = dFdx(vW), dp2 = dFdy(vW);
       if (vTexL.x >= 0.0) { vec4 t = texture(uTexBC, slot(vTexL.x)); base *= t.rgb; op *= t.a; }
       if (vTexL.y >= 0.0) { vec4 t = texture(uTexMR, slot(vTexL.y)); rough *= t.g; metal = clamp(metal * t.b, 0.0, 1.0); }
+      // 环境光遮蔽：缝隙、按键边、镜头圈、扬声器网等处压暗环境光（本渲染器的光照全部来自环境，漫反射与反射一起乘）
+      float ao = 1.0;
+      if (vTexL.w >= 0.0) {
+        vec4 t = texture(uTexAO, slot(vTexL.w));
+        ao = vTexL.w - floor(vTexL.w * 0.25) * 4.0 > 1.5 ? mix(t.r, t.g, uClosed) : t.r;
+      }
       if (vTexL.z >= 0.0) {
         vec3 c = slot(vTexL.z);
         vec3 tn = texture(uTexN, c).xyz * 2.0 - 1.0;
@@ -534,14 +542,14 @@
         nv = clamp(dot(N, V), 0.0, 1.0);
       }
       if (uPass == 0) {
-        outColor = vec4(lin2srgb(tone(shade(N, V, base, metal, rough, coat) * falloff())), 1.0);
+        outColor = vec4(lin2srgb(tone(shade(N, V, base, metal, rough, coat) * (ao * falloff()))), 1.0);
         return;
       }
       // 透明玻璃：本体按不透明度着色，表面反射直接叠加（预乘 alpha）
       vec3 R = reflect(-V, N);
       float r = clamp(min(rough, 0.25), 0.02, 1.0);
-      vec3 spec = envBRDF(vec3(0.04), r, max(nv, 1e-3)) * envSpec(R, r);
-      vec3 body = base * (1.0 - metal) * irradiance(N) * op;
+      vec3 spec = envBRDF(vec3(0.04), r, max(nv, 1e-3)) * envSpec(R, r) * ao;
+      vec3 body = base * (1.0 - metal) * irradiance(N) * op * ao;
       vec3 c = tone(body + spec);
       float a = clamp(op + dot(spec, vec3(0.3)), 0.0, 1.0);
       outColor = vec4(lin2srgb(c), a);
@@ -611,6 +619,7 @@
   uniform bool uPalFlip;
   uniform float uMatte;     // 防眩光磨砂膜（Duo 内屏）：1 = 有；0 = 普通镜面玻璃屏，不画表面反射
   uniform vec3 uUdc;        // 屏下摄像头：中心（屏幕局部坐标，毫米）和半径；半径 0 为没有
+  uniform bool uModelHoles; // 开孔里有模型自带的镜头几何：屏幕在孔内透空，直接露出模型
   ${COLOR_GLSL}
   ${ENV_GLSL}
 
@@ -707,6 +716,7 @@
       scr = mix(scr, cutCol, inCut);
     }
     float h0 = aperture(pp, uHole0, px), h1 = aperture(pp, uHole1, px), h2 = aperture(pp, uHole2, px);
+    if (uModelHoles && max(h0, max(h1, h2)) > 0.5) discard;
     if (h0 > 0.0) scr = mix(scr, lens(pp, uHole0, vd), h0);
     if (h1 > 0.0) scr = mix(scr, lens(pp, uHole1, vd), h1);
     if (h2 > 0.0) scr = mix(scr, lens(pp, uHole2, vd), h2);
@@ -770,11 +780,11 @@
     if (withNormals) {
       attr('aNor', mesh.nor, 3); attr('aMat', mesh.mat, 1); attr('aUv', mesh.uv, 2);
       if (mesh.tint) { attr('aTint', mesh.tint, 3); attr('aFinish', mesh.finish, 4); }
-      if (mesh.texl) { attr('aUv1', mesh.uv1, 2); attr('aTexL', mesh.texl, 3); }
+      if (mesh.texl) { attr('aUv1', mesh.uv1, 2); attr('aTexL', mesh.texl, 4); }
       else {
         // 程序生成的机身没有模型贴图
         const l = gl.getAttribLocation(prog.p, 'aTexL');
-        if (l >= 0) { gl.disableVertexAttribArray(l); gl.vertexAttrib3f(l, -1, -1, -1); }
+        if (l >= 0) { gl.disableVertexAttribArray(l); gl.vertexAttrib4f(l, -1, -1, -1, -1); }
       }
     } else {
       attr('aNor', mesh.nor, 3);
@@ -802,6 +812,7 @@
   gl.uniform1i(bodyProg.u.uTexBC, 4);
   gl.uniform1i(bodyProg.u.uTexMR, 5);
   gl.uniform1i(bodyProg.u.uTexN, 6);
+  gl.uniform1i(bodyProg.u.uTexAO, 7);
   gl.useProgram(screenProg.p);
 
   // 模型贴图：每种用途一个 512² 纹理数组（含多级渐远），各机型一套，第一次绘制时上传
@@ -839,7 +850,7 @@
     const key = model && Phone3D.hasModel(model) ? model : '';
     if (!modelTex[key]) {
       const imgs = key ? Phone3D.modelTextures(key) : null;
-      modelTex[key] = [texArray(imgs?.bc || [], true), texArray(imgs?.mr || [], false), texArray(imgs?.n || [], false)];
+      modelTex[key] = [texArray(imgs?.bc || [], true), texArray(imgs?.mr || [], false), texArray(imgs?.n || [], false), texArray(imgs?.ao || [], false)];
     }
     modelTex[key].forEach((tex, i) => { gl.activeTexture(gl.TEXTURE4 + i); gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex); });
     gl.activeTexture(gl.TEXTURE0);
@@ -1004,6 +1015,7 @@
       const hasBackTexture = v.dev.spec.backTexture && bindBackTexture(v.dev.spec.backTexture);
       gl.uniform1i(bodyProg.u.uUseBackTex, hasBackTexture ? 1 : 0);
       bindModelTextures(v.dev.spec.model);
+      gl.uniform1f(bodyProg.u.uClosed, v.dev.spec.foldable ? 1 - v.dev.fold / 180 : 0);
       gl.bindVertexArray(v.dev.body.vao);
       setCommon(bodyProg, M, v);
       gl.uniform1i(bodyProg.u.uPass, 0);
@@ -1038,6 +1050,7 @@
         gl.uniform1i(bodyProg.u.uNative, 1);
         gl.uniform1i(bodyProg.u.uUseBackTex, 0);
         bindModelTextures(v.dev.spec.model);
+        gl.uniform1f(bodyProg.u.uClosed, v.dev.spec.foldable ? 1 - v.dev.fold / 180 : 0);
         gl.bindVertexArray(v.dev.body.vao);
         setCommon(bodyProg, M, v);
         gl.drawElements(gl.TRIANGLES, v.dev.body.split, gl.UNSIGNED_INT, 0);
@@ -1063,6 +1076,7 @@
         gl.uniform1f(screenProg.u.uCorner, screen.corner);
         const udc = screen.udc;
         gl.uniform1f(screenProg.u.uMatte, screen.matte ? 1 : 0);
+        gl.uniform1i(screenProg.u.uModelHoles, screen.modelHoles && Phone3D.hasModel(d.spec.model) ? 1 : 0);
         gl.uniform3f(screenProg.u.uUdc, udc ? udc[0] : 0, udc ? screen.screenHalf[1] - udc[1] : 0, udc ? udc[2] : 0);
         gl.uniform3f(screenProg.u.uCut, cut.y, cut.half, cut.r);
         const holes = screen.holes || [];
@@ -1906,7 +1920,7 @@
 
   // ---------- 模式：屏幕仿真（默认，本页原有工具）/ 场景演示（三维，scene3d.js，做动画用，从“画面 → 更多”进入） ----------
   let appMode = 'sim', scene3d = null, scene3dLoading = null;
-  const S3D_VER = 10;
+  const S3D_VER = 11;
   const loadScript = (src) => new Promise((res, rej) => {
     const s = document.createElement('script');
     s.src = src; s.onload = res; s.onerror = () => rej(new Error('无法加载 ' + src));
