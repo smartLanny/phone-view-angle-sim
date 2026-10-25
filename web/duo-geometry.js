@@ -4,7 +4,8 @@
     // 内屏：防眩光磨砂膜；屏下摄像头在右半屏靠上（与 holes 相同约定：离中心的横向距离、离上边的距离、半径，毫米）。
     // 位置和大小取自苹果官网 AR 模型内屏网格里那块镜面圆片：圆心 (33.68, 48.62) mm，半径 2.33 mm
     inner: { width: 157.53, height: 110.80, resW: 2670, resH: 1878, corner: 0, cutout: { y: 0, half: 0, r: 0 }, holes: [], matte: true, udc: [33.68, 55.40 - 48.62, 2.33] },
-    outer: { width: 77.17, height: 112.28, resW: 1398, resH: 2034, corner: 0, cutout: { y: 0, half: 0, r: 0 }, holes: [[30.67, 7.91, 3.045]] },
+    // 外屏前摄开孔（与原模型外屏网格的开孔一致：r 3.05 mm）；孔里直接露出模型自带的镜头（黑色玻璃圈、镜片、镜筒），不再画示意镜头
+    outer: { width: 77.17, height: 112.28, resW: 1398, resH: 2034, corner: 0, cutout: { y: 0, half: 0, r: 0 }, holes: [[30.67, 7.91, 3.045]], modelHoles: true },
   };
   const outlines = {
     inner: makeCorner([[12.61949,0],[11.40581,.00306],[10.67767,.01004],[9.95664,.02549],[9.25412,.05493],[8.5708,.1036],[7.90694,.17599],[7.26129,.27746],[6.63583,.41123],[6.02914,.57978],[5.44405,.78441],[4.87664,1.02842],[4.3148,1.32173],[3.79925,1.64259],[3.30911,2.00127],[2.84081,2.40211],[2.40396,2.8388],[2.0027,3.30728],[1.63708,3.80738],[1.31052,4.33445],[1.02779,4.87871],[.78459,5.44355],[.57972,6.02917],[.41131,6.63539],[.27749,7.26103],[.17607,7.90621],[.10363,8.57042],[.05493,9.25405],[.0255,9.95601],[.01005,10.677],[.00308,11.40404],[0,12.60999]]),
@@ -114,7 +115,8 @@
     }
     for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const a=j*(nx+1)+i,b=a+nx+1;mesh.idx.push(a,a+1,b,a+1,b+1,b);}
     return {key,mesh,screenHalf:[d.width/2,d.height/2],corner:d.corner,cutout:backing?{y:0,half:0,r:0}:screens[key].cutout,holes:backing?[]:screens[key].holes,
-      matte:!backing&&!!d.matte,udc:backing?null:d.udc||null};
+      matte:!backing&&!!d.matte,udc:backing?null:d.udc||null,modelHoles:!backing&&!!d.modelHoles};
   }
-  root.DuoGeometry={screens,foldPoint,leafPose,surfaceFrame,frame,orient,rotate,buildScreen,halfCrease,residual,residualPoint};
+  // 三维场景（scene3d.js）打包时也带了一份本文件；页面先加载的这份总是最新的，后加载的那份不覆盖它
+  root.DuoGeometry=root.DuoGeometry||{screens,foldPoint,leafPose,surfaceFrame,frame,orient,rotate,buildScreen,halfCrease,residual,residualPoint};
 })(window);

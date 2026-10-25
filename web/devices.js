@@ -93,7 +93,9 @@
         outer:{diag:5.36,resW:1398,resH:2034,corner:5.6,half:[38.585,56.14],cutout:{y:0,half:0,r:0},holes:[[30.67,7.91,3.045]]},
       },
       cutout: {y:0,half:0,r:0},rough:.5,
-      colors:[{id:'white',name:'星白色',swatch:'#e1dfd8',frame:[.7,.69,.66],back:[.85,.84,.81]}],
+      // 两种颜色对应原模型的两个颜色变体（KHR_materials_variants）
+      colors:[{id:'white',name:'星白色',variant:'Star White',swatch:'#e1dfd8',frame:[.7,.69,.66],back:[.85,.84,.81]},
+        {id:'night',name:'夜空色',variant:'Night Sky',swatch:'#24303f',frame:[.05,.07,.1],back:[.012,.036,.06]}],
     },
   };
 })(window);
