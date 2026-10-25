@@ -36,7 +36,7 @@
 
   const S = {
     dist: 300, tilt: [0, 0], theta: 0, psi: 0, rot: 0, mode: 0, pattern: 'ui', colors: {},
-    compare: false, device: DEVICES[0], privacy: false,
+    compare: false, device: DEVICES.includes('iPhone Duo') ? 'iPhone Duo' : DEVICES[0], privacy: false,   // 默认打开 iPhone Duo
     fold: 180, duoSurface: 'inner',
     stereo: false, cross: false, ipd: 63, gap: 8, size: 1,
     slots: DEVICES.length > 1
@@ -1132,7 +1132,6 @@
     S.theta = theta;
     S.psi = AngleModel.norm360(psi);
     S.tilt = [-theta * Math.cos(S.psi * DEG), -theta * Math.sin(S.psi * DEG)];
-    syncThetaChips();
     requestRender();
   }
   /** 拖动画面时直接改手机姿态，再反算眼睛方向。 */
@@ -1142,14 +1141,7 @@
     S.tilt = [tx, ty];
     S.theta = Math.min(mag, MAX_TILT);
     if (mag > 0.05) S.psi = AngleModel.norm360(Math.atan2(-ty, -tx) / DEG);
-    syncThetaChips();
     requestRender();
-  }
-  function syncThetaChips() {
-    const el = $('theta');
-    if (el) el.value = Math.round(S.theta);   // 滑块步长 1°，拖动时回写的是同一个值，不会跳
-    if ($('thetaV')) $('thetaV').textContent = Math.round(S.theta) + '°';
-    syncDial();
   }
 
   let anim = null;
@@ -1223,14 +1215,9 @@
     const L = W >= 1180 && H >= 600 ? 'wide' : W > 760 ? 'side' : 'sheet';
     const body = document.body;
     body.dataset.layout = L;
-    // 手机竖屏：离轴角滑块常驻在底部栏，设置默认收起，画面优先给手机
-    const angleRow = $('angleRow');
-    if (L === 'sheet') {
-      if (angleRow.parentElement !== $('quick')) $('quick').appendChild(angleRow);
-      if (!sheetSeen) { sheetSeen = true; setSheetMin(true); }
-    } else if (angleRow.parentElement !== document.querySelector('.pad-side')) {
-      document.querySelector('.pad-side').appendChild(angleRow);
-    }
+    // 手机竖屏：设置默认收起，画面优先给手机；视角直接拖动手机调整
+    if (L === 'sheet' && !sheetSeen) { sheetSeen = true; setSheetMin(true); }
+    $('hint').textContent = L === 'sheet' ? '拖动手机改变观看角度 · 双击回正' : '拖动画面转动手机 · 拖动左侧方向盘直接选角度 · 滚轮调距离 · 空格自动扫描';
     placePicker();
     const hud = $('hud'), rail = $('rail'), pb = $('panelBody');
     if (L === 'wide' && !S.clean) {
@@ -1338,14 +1325,6 @@
 
   $('dist').addEventListener('input', (e) => setDist(+e.target.value));
   $('sweep').addEventListener('click', toggleSweep);
-  // 离轴角滑块：拖动时直接跟手（沿当前观看方向），不做动画
-  $('theta').max = Math.round(MAX_TILT);
-  $('theta').addEventListener('input', (e) => {
-    stopSweep();
-    cancelAnimationFrame(anim);
-    setView(+e.target.value, S.psi);
-  });
-  $('theta').addEventListener('change', (e) => e.target.blur());
 
   function bindSeg(id, fn) {
     $(id).addEventListener('click', (e) => {
@@ -1409,18 +1388,10 @@
 
   function syncProfileUI() {
     stopFoldAnimation(true);
-    const showPriv = !S.compare && hasPrivacy(S.device);
-    $('privacyRow').hidden = !showPriv;
-    $('privacyText').textContent = privacyText(S.device).switch;
-    $('privacyHint').textContent = privacyText(S.device).hint;
-    $('privacy').checked = !!(variant(S.device, S.privacy) || {}).privacy;
     $('secDevice').hidden = S.compare;
     $('secSlots').hidden = !S.compare;
     $('stereoGroup').hidden = !S.stereo;
     $('secFold').hidden = !hasDuo();
-    $('duoSurface').hidden = S.compare;
-    $('foldCtl').hidden = S.compare;   // 对比时外屏固定合上、内屏固定展开
-    syncSeg('duoSurface', S.duoSurface);
     syncFoldUI();
     [0, 1].forEach((i) => { $('slot' + i).value = S.slots[i]; });
     syncSeg('compare', S.stereo ? 2 : S.compare ? 1 : 0);
@@ -1438,7 +1409,6 @@
     sel.innerHTML = options;
     sel.addEventListener('change', () => { S.slots[i] = sel.value; retryFailedModels(); syncProfileUI(); requestRender(); });
   });
-  $('privacy').addEventListener('change', (e) => { S.privacy = e.target.checked; syncProfileUI(); requestRender(); });
   function syncFoldUI() {
     $('fold').value = Math.round(S.fold);
     $('foldV').textContent = Math.round(S.fold) + '°';
@@ -1471,16 +1441,16 @@
   function setDuoSurface(v) { S.duoSurface = v; syncProfileUI(); setFold(v === 'outer' ? 0 : 180, true); }
   /** 0 单台 / 1 双机对比 / 2 双眼立体。 */
   function setCompareMode(v) { S.compare = v === 1; S.stereo = v === 2; retryFailedModels(); syncProfileUI(); requestRender(); }
-  bindSeg('duoSurface', setDuoSurface);
-  $('fold').addEventListener('input', (e) => setFold(e.target.value));
+  // 展开角度滑条：0° 即合上、看外屏；拉开后看内屏（拖动时实时跟手，过 0° 时平滑切换朝向）
+  $('fold').addEventListener('input', (e) => {
+    const v = +e.target.value, want = v <= 2 ? 'outer' : 'inner';
+    stopSweep();
+    if (want !== S.duoSurface) { S.duoSurface = want; syncProfileUI(); }
+    setFold(want === 'outer' ? 0 : v);   // 拉到底即完全合上
+  });
   bindSeg('compare', (v) => setCompareMode(+v));
 
   // ---------- 画面上的快捷切换条 + 机型选择 ----------
-  const QB_ICON = {
-    outer: '<svg width="12" height="16" viewBox="0 0 12 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="13" rx="2.2"/></svg>',
-    inner: '<svg width="20" height="16" viewBox="0 0 20 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.5" y="1.5" width="17" height="13" rx="2.2"/><path d="M10 2v12" stroke-dasharray="1.6 1.8"/></svg>',
-    shield: '<svg width="14" height="16" viewBox="0 0 14 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M7 1.5l5.2 2v4.1c0 3.3-2.2 5.7-5.2 6.9-3-1.2-5.2-3.6-5.2-6.9V3.5z"/></svg>',
-  };
   /** 快捷条上的短名：“小米 18 Pro Max”“iPhone GH3 防窥膜”“iPhone Duo 外屏”。 */
   function chipName(p) {
     const k = specKey(p.device) || p.device, suffix = p.device.slice(k.length).trim();
@@ -1493,30 +1463,26 @@
     qb.hidden = S.clean;
     $('devDots').innerHTML = ids.map((id, i) => `<i style="--c:${S.compare ? SERIES[i] : colorOf(byId(id).device).swatch}"></i>`).join('');
     $('devName').textContent = ids.map((id) => chipName(byId(id))).join(' vs ');
-    let html = '';
-    if (!S.compare && S.device === 'iPhone Duo') {
-      html = ['outer', 'inner'].map((s) => `<button data-surface="${s}" class="${S.duoSurface === s ? 'on' : ''}" aria-pressed="${S.duoSurface === s}">` +
-        `${QB_ICON[s]}<span class="lg">${s === 'outer' ? '合上看外屏' : '展开看内屏'}</span><span class="sm">${s === 'outer' ? '合上' : '展开'}</span></button>`).join('');
-    } else if (!S.compare && hasPrivacy(S.device)) {
-      const on = !!(variant(S.device, S.privacy) || {}).privacy;
-      html = `<button data-privacy="1" class="qb-toggle${on ? ' on' : ''}" aria-pressed="${on}">${QB_ICON.shield}<span>${privacyText(S.device).switch}</span><i class="qb-sw"></i></button>`;
-    }
-    const st = $('qbState');
-    if (st._html !== html) { st.innerHTML = html; st._html = html; }
-    st.hidden = !html;
+    // iOS 风格开关：Duo 为“展开”（关 = 合上看外屏），带防窥的机型为防窥 / 贴膜
+    const duo = !S.compare && S.device === 'iPhone Duo', priv = !S.compare && !duo && hasPrivacy(S.device);
+    const on = duo ? S.duoSurface === 'inner' : priv && !!(variant(S.device, S.privacy) || {}).privacy;
+    const sw = $('qcSwitch');
+    sw.hidden = !(duo || priv);
+    sw.setAttribute('aria-checked', String(on));
+    $('qcLbl').textContent = duo ? (on ? '展开 · 内屏' : '合上 · 外屏') : priv ? privacyText(S.device).switch : '';
+    $('qcFold').hidden = !duo;
+    qb.classList.toggle('duo', duo);
+    qb.classList.toggle('solo', !duo && !priv);
     if (!$('picker').hidden) { renderPicker(); requestAnimationFrame(placePicker); }   // 机型名变长变短时弹出框跟着对齐
   }
-  $('qbState').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (!b) return;
+  $('qcSwitch').addEventListener('click', () => {
     stopSweep();
-    if (b.dataset.surface) { if (b.dataset.surface !== S.duoSurface) setDuoSurface(b.dataset.surface); return; }
-    if (b.dataset.privacy) {
-      S.privacy = !(variant(S.device, S.privacy) || {}).privacy;
-      syncProfileUI();
-      requestRender();
-      toast(profileLabel(byId(activeIds()[0])));
-    }
+    if (!S.compare && S.device === 'iPhone Duo') { setDuoSurface(S.duoSurface === 'inner' ? 'outer' : 'inner'); return; }
+    if (!hasPrivacy(S.device)) return;
+    S.privacy = !(variant(S.device, S.privacy) || {}).privacy;
+    syncProfileUI();
+    requestRender();
+    toast(profileLabel(byId(activeIds()[0])));
   });
 
   // 机型选择：手机上是底部弹层，电脑上是快捷条上方的弹出框
@@ -1596,33 +1562,6 @@
     renderPicker();
   });
 
-  // 手机底栏的小方向盘：与大方向盘同一映射（右 = 0°，上 = 90°），中心为正对、边缘为最大离轴角
-  function syncDial() {
-    const r = Math.min(S.theta / MAX_TILT, 1) * 19, a = S.psi * DEG;   // 19 px：方向盘可拖动半径
-    $('dialDot').style.transform = `translate(${(r * Math.cos(a)).toFixed(1)}px, ${(-r * Math.sin(a)).toFixed(1)}px)`;
-    $('dialArm').style.width = r.toFixed(1) + 'px';
-    $('dialArm').style.transform = `rotate(${(-S.psi).toFixed(1)}deg)`;
-  }
-  (() => {
-    const el = $('dial');
-    let down = false;
-    const pickAt = (e) => {
-      const rc = el.getBoundingClientRect();
-      const x = e.clientX - rc.left - rc.width / 2, y = -(e.clientY - rc.top - rc.height / 2);
-      let th = Math.min((Math.hypot(x, y) / 19) * MAX_TILT, MAX_TILT);
-      let psi = AngleModel.norm360(Math.atan2(y, x) / DEG);
-      const snap = Math.round(psi / 15) * 15;
-      if (Math.abs(psi - snap) < 6) psi = AngleModel.norm360(snap);
-      th = th < 3 ? 0 : Math.round(th);
-      stopSweep();
-      cancelAnimationFrame(anim);
-      setView(th, psi);
-    };
-    el.addEventListener('pointerdown', (e) => { down = true; el.setPointerCapture(e.pointerId); pickAt(e); });
-    el.addEventListener('pointermove', (e) => { if (down) pickAt(e); });
-    el.addEventListener('pointerup', () => { down = false; });
-    el.addEventListener('pointercancel', () => { down = false; });
-  })();
   bindSeg('stereoView', (v) => { S.cross = v === '1'; requestRender(); });
   $('size').addEventListener('input', (e) => { S.size = e.target.value / 100; $('sizeV').textContent = e.target.value + '%'; requestRender(); });
   $('gap').addEventListener('input', (e) => { S.gap = +e.target.value; $('gapV').textContent = S.gap + ' px'; requestRender(); });
@@ -1713,7 +1652,7 @@
   function readHash() {
     const q = new URLSearchParams(location.hash.slice(1));
     const num = (k, d) => (q.has(k) && isFinite(+q.get(k)) ? +q.get(k) : d);
-    const di = num('dev', 0);
+    const di = num('dev', Math.max(DEVICES.indexOf('iPhone Duo'), 0));
     if (DEVICES[di]) S.device = DEVICES[di];
     S.privacy = num('pv', 0) === 1;
     const cmp = num('cmp', 0);
