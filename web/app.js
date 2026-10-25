@@ -14,11 +14,18 @@
   const specOf = (device) => SPECS[specKey(device) || KNOWN[0]];
   const rank = (device) => { const i = KNOWN.indexOf(specKey(device)); return i < 0 ? KNOWN.length : i; };
 
+  // Duo 数据后续会更新：界面（含三维场景）暂不显示“低精度 / 临时替代”等来源说明，数据文件本身不改
+  for (const k of ['inner', 'outer']) {
+    const d = window.DUO_DATA?.[k];
+    if (!d) continue;
+    delete d.sourceNote;
+    if (d.measurement) delete d.measurement.temporary;
+  }
   const DUO_PROFILES = ['inner', 'outer'].map((surface) => Object.assign(
     { sets: null }, window.DUO_DATA[surface] || {},
     { id: `duo-${surface}`, device: 'iPhone Duo', surface, privacy: false },
   ));
-  const DUO_NOTE = DUO_PROFILES.map((p) => p.sourceNote || (p.surface === 'outer' ? '外屏' : '内屏') + '数据待测').join('；');
+  const DUO_NOTE = DUO_PROFILES.filter((p) => !p.sets).map((p) => (p.surface === 'outer' ? '外屏' : '内屏') + '数据待测').join('；');
   const PROFILES = [...DATA.profiles, ...DUO_PROFILES];
   const DEVICES = [...new Set(PROFILES.map((p) => p.device))].sort((a, b) => rank(a) - rank(b));
   const byId = (id) => PROFILES.find((p) => p.id === id);
@@ -163,14 +170,26 @@
     const w = (sc.diag * 25.4) / Math.sqrt(1 + ratio * ratio);
     const corners = phone.corners || [];
     if (!phone.corners) for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const z of [0, -P.T]) corners.push([sx * P.W / 2, sy * P.H / 2, z]);
+    // Duo 的取景缩放按固定外形算：看内屏时始终按完全展开的尺寸，看外屏时按合上的尺寸，两者之间随朝向过渡。
+    // 这样改变展开角度时画面缩放不变，屏幕不会因为外形变窄而被“拉近”。
+    let fitCorners = null;
+    if (duo) {
+      const a = duoFit('inner'), b = duoFit('outer'), m = mix === undefined ? (surface === 'outer' ? 1 : 0) : mix;
+      if (a && b) fitCorners = a.map((c, i) => c.map((v, k) => v * (1 - m) + b[i][k] * m));
+    }
     const screens = duo ? phone.screens : [{ mesh: phone.screen, screenHalf: sc.half || [w / 2, (w * ratio) / 2], corner: sc.corner, cutout: spec.cutout, holes: sc.holes }];
     return (devCache[key] = {
-      name, spec, corners, fold, surface, frameMix:mix,
+      name, spec, corners, fitCorners, fold, surface, frameMix:mix,
       screenHalf: sc.half || [w / 2, (w * ratio) / 2],
       body: meshVAO(bodyProg, phone.body, true),
       surfaceFrame: phone.surfaceFrame,
       screens: screens.map((s) => Object.assign({}, s, { screen: meshVAO(screenProg, s.mesh, false) })),
     });
+  }
+  const duoFitBox = {};
+  function duoFit(surface) {
+    if (!Phone3D.hasModel('iphoneduo')) return null;
+    return duoFitBox[surface] || (duoFitBox[surface] = surface === 'outer' ? Phone3D.buildDuo(0, 'outer', 1).corners : Phone3D.buildDuo(180, 'inner', 0).corners);
   }
   function retryFailedModels() {
     for (const name of activeDevices()) {
@@ -260,7 +279,7 @@
    */
   function computeViews(devs) {
     const n = devs.length;
-    const boxCorners = devs.flatMap((d) => d.corners);
+    const boxCorners = devs.flatMap((d) => d.fitCorners || d.corners);
     const W = canvas.clientWidth, H = canvas.clientHeight;
     const R = stageRect();
     const sheet = document.body.dataset.layout === 'sheet';
@@ -307,7 +326,7 @@
       }
     }
     // 手机竖屏空间宝贵：以正对时放满为准，大角度时允许手机略微伸到上下栏下面
-    let f = Math.max(fEnv, extent(flat) * (compactStage() ? 0.97 : 0.75));
+    let f = Math.max(fEnv, extent(flat) * (compactStage() ? 0.97 : 0.9));
     // 双眼立体：两幅图按全部偏转姿态的投影包络定宽，并排且中间只留 S.gap，
     // 任何角度都不裁切手机，拖动时框也不缩放
     let colW = colMax;
@@ -361,12 +380,12 @@
   in float aMat;
   in vec2 aUv;
   in vec3 aTint;
-  in vec2 aFinish;
+  in vec4 aFinish;
   out vec3 vN;
   out vec3 vW;
   out vec2 vUv;
   out vec3 vTint;
-  out vec2 vFinish;
+  out vec4 vFinish;
   flat out int vMat;
   ${COMMON_VS}
   void main() {
@@ -385,7 +404,7 @@
   in vec3 vW;
   in vec2 vUv;
   in vec3 vTint;
-  in vec2 vFinish;
+  in vec4 vFinish;   // 金属度、粗糙度、不透明度、清漆
   flat in int vMat;
   out vec4 outColor;
   uniform vec3 uEye;
@@ -394,85 +413,111 @@
   uniform sampler2D uBackTex;
   uniform bool uUseBackTex;
   uniform bool uNative;
+  uniform int uPass;   // 0 不透明，1 透明（镜头盖玻璃等，预乘 alpha 叠加）
   ${COLOR_GLSL}
 
-  // 摄影棚：上方大柔光箱 + 右侧灯条 + 左侧轮廓光，外加上亮下暗的环境渐变。
-  vec3 sky(vec3 d) {
-    return mix(vec3(0.03, 0.033, 0.04), vec3(0.30, 0.31, 0.34), smoothstep(-0.6, 0.9, d.y));
+  // ---- 摄影棚环境（只用于机身；屏幕显示走另一套着色器，不受影响）----
+  // 上亮下暗的影棚底色 + 几盏有尺寸的柔光灯：左上前方大柔光箱（主光）、右侧竖灯条、左后轮廓光、顶灯、正前方弱补光。
+  // 粗糙度越高，灯在反射里越宽越柔、亮度相应摊薄，金属中框得到连续的明暗渐变，磨砂背板呈缎面质感。
+  vec3 studio(vec3 d) {
+    vec3 floorC = vec3(0.010, 0.011, 0.013), horizon = vec3(0.060, 0.064, 0.072), ceilC = vec3(0.20, 0.205, 0.22);
+    return d.y < 0.0 ? mix(horizon, floorC, smoothstep(0.0, -0.55, d.y)) : mix(horizon, ceilC, smoothstep(0.0, 0.85, d.y));
   }
-  // 镜面玻璃用的清晰环境（相机镜片）
-  vec3 envSharp(vec3 r) {
-    vec3 c = sky(r);
-    c += vec3(3.2) * smoothstep(0.90, 0.985, dot(r, normalize(vec3(-0.35, 0.8, 0.5))));
-    c += vec3(1.6) * smoothstep(0.93, 0.99, dot(r, normalize(vec3(0.9, 0.1, 0.45))));
-    c += vec3(0.9) * smoothstep(0.93, 0.99, dot(r, normalize(vec3(-0.95, -0.15, 0.3))));
-    return c;
-  }
-
-  // GGX 微表面高光（灯光按有尺寸的柔光源处理，粗糙度下限避免针尖高光）
-  vec3 ggx(vec3 N, vec3 V, vec3 L, float a, vec3 F0) {
-    vec3 H = normalize(L + V);
-    float nl = max(dot(N, L), 0.0), nv = max(dot(N, V), 1e-3);
-    float nh = max(dot(N, H), 0.0), vh = max(dot(V, H), 0.0);
-    float a2 = a * a, d = nh * nh * (a2 - 1.0) + 1.0;
-    float D = a2 / (3.14159 * d * d);
-    float k = a * 0.5;
-    float G = (nl / (nl * (1.0 - k) + k)) * (nv / (nv * (1.0 - k) + k));
-    vec3 F = F0 + (1.0 - F0) * pow(1.0 - vh, 5.0);
-    return D * G * F / (4.0 * nv) ;
-  }
-
-  // coat: 表面透明层（阳极氧化膜 / 玻璃）的 4% 白色反射
-  vec3 lights(vec3 N, vec3 V, float a, vec3 F0, vec3 diff, float coat) {
-    vec3 L[3] = vec3[3](normalize(vec3(-0.35, 0.8, 0.5)), normalize(vec3(0.9, 0.1, 0.45)), normalize(vec3(-0.95, -0.15, 0.3)));
-    float I[3] = float[3](1.7, 0.9, 0.5);
-    vec3 c = vec3(0.0);
-    for (int i = 0; i < 3; i++) {
-      float nl = max(dot(N, L[i]), 0.0);
-      c += I[i] * (ggx(N, V, L[i], a, F0) + coat * ggx(N, V, L[i], a, vec3(0.04)) + diff * nl / 3.14159);
+  const int NL = 5;
+  vec3 LD[NL] = vec3[NL](normalize(vec3(-0.45, 0.72, 0.53)), normalize(vec3(0.97, 0.08, 0.22)), normalize(vec3(-0.90, 0.22, -0.38)),
+                         normalize(vec3(0.10, 1.0, -0.05)), normalize(vec3(0.0, 0.12, 1.0)));
+  float LR[NL] = float[NL](0.42, 0.13, 0.16, 0.30, 0.55);   // 灯的角半径（弧度）
+  float LI[NL] = float[NL](2.6, 2.4, 1.7, 1.1, 0.30);
+  // 竖灯条：在水平方向收窄
+  vec3 envSpec(vec3 r, float rough) {
+    vec3 c = studio(r);
+    float blur = 0.015 + rough * rough * 1.1;
+    for (int i = 0; i < NL; i++) {
+      vec3 L = LD[i];
+      float cl = dot(r, L);
+      if (cl < 0.0) continue;                        // 背向这盏灯
+      float ang = sqrt(max(2.0 * (1.0 - cl), 0.0)); // 小角度近似 acos，省去反三角函数
+      if (i == 1) { vec3 q = r - L * cl; ang = length(vec2(dot(q, normalize(cross(L, vec3(0.0, 1.0, 0.0)))) * 2.6, q.y)); }
+      float rad = LR[i];
+      float lobe = 1.0 - smoothstep(rad - blur * 0.35, rad + blur, ang);
+      c += vec3(LI[i]) * lobe * (rad * rad) / ((rad + blur * 0.6) * (rad + blur * 0.6));
     }
     return c;
+  }
+  vec3 irradiance(vec3 n) {
+    vec3 c = mix(vec3(0.02, 0.021, 0.024), vec3(0.17, 0.175, 0.19), n.y * 0.5 + 0.5);
+    for (int i = 0; i < NL; i++) c += LI[i] * LR[i] * LR[i] * 0.55 * max(dot(n, LD[i]), 0.0);
+    return c;
+  }
+  // 分离求和近似（Karis）
+  vec3 envBRDF(vec3 F0, float r, float nv) {
+    vec4 rr = r * vec4(-1.0, -0.0275, -0.572, 0.022) + vec4(1.0, 0.0425, 1.04, -0.04);
+    float a004 = min(rr.x * rr.x, exp2(-9.28 * nv)) * rr.x + rr.y;
+    vec2 AB = vec2(-1.04, 1.04) * a004 + rr.zw;
+    return F0 * AB.x + AB.y;
+  }
+  // 通用材质：底色、金属度、粗糙度、清漆（透明保护层的 4% 反射）
+  vec3 shade(vec3 N, vec3 V, vec3 base, float metal, float rough, float coat) {
+    float nv = clamp(dot(N, V), 1e-3, 1.0);
+    vec3 R = reflect(-V, N);
+    rough = clamp(rough, 0.03, 1.0);
+    vec3 F0 = mix(vec3(0.04), base, metal), diff = base * (1.0 - metal);
+    vec3 col = diff * irradiance(N) + envBRDF(F0, rough, nv) * envSpec(R, rough);
+    if (coat > 0.0) {
+      vec3 Fc = envBRDF(vec3(0.04), 0.06, nv) * coat;
+      col = col * (1.0 - Fc) + Fc * envSpec(R, 0.06);
+    }
+    return col;
+  }
+  // 胶片式色调映射（ACES 近似），高光柔和滚降
+  vec3 tone(vec3 x) {
+    x *= 1.05;
+    return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
   }
 
   void main() {
     vec3 N = normalize(vN);
     vec3 V = normalize(uEye - vW);
-    vec3 R = reflect(-V, N);
+    if (dot(N, V) < 0.0) N = -N;   // 双面材质
     float nv = clamp(dot(N, V), 0.0, 1.0);
-    vec3 col;
     if (uNative) {
+      float op = vFinish.z;
+      if ((uPass == 0) != (op >= 0.99)) discard;
       vec3 base = vTint;
-      float metal = vFinish.x, rough = clamp(vFinish.y, 0.05, 1.0);
-      vec3 F0 = mix(vec3(0.04), base, metal), diff = base * (1.0 - metal);
-      col = lights(N, V, max(rough * rough, 0.04), F0, diff, 0.2)
-        + mix(F0, vec3(1.0), pow(1.0 - nv, 5.0)) * sky(R) * 0.7 + diff * sky(N) * 0.6;
-    } else if (uUseBackTex && (vMat == 1 || vMat == 2)) {
-      vec4 photo = texture(uBackTex, vUv);
-      vec3 base = srgb2lin(photo.rgb) * (0.92 + 0.08 * max(dot(N, normalize(vec3(-0.2, 0.7, 0.6))), 0.0));
-      col = mix(uBack * 0.4, base, photo.a);
-      col += vec3(0.025) * pow(1.0 - nv, 5.0);
-    } else if (vMat == 0 || vMat == 3 || vMat == 1) {
-      // 喷砂阳极氧化铝: 金属高光带本色、粗糙度高；氧化层染色带一点漫反射。
-      // 背板为同色磨砂玻璃: 非金属，漫反射为主，高光弱而宽。
-      bool metal = vMat != 1;
-      vec3 base = metal ? uFrame : uBack;
-      float rough = metal ? uRough : max(uRough - 0.1, 0.3);
-      float a = max(rough * rough, 0.06);
-      vec3 F0 = metal ? base : vec3(0.04);
-      vec3 diff = metal ? base * 0.12 : base * 0.75;
-      float fg = pow(1.0 - nv, 5.0) * (1.0 - rough);
-      vec3 Fe = F0 + (1.0 - F0) * fg * 0.5;
-      vec3 skyR = sky(normalize(mix(R, N, rough * 0.7)));
-      col = lights(N, V, a, F0, diff, metal ? 1.0 : 0.0)
-          + Fe * skyR * 0.7
-          + (metal ? vec3(0.04 + fg * 0.3) * skyR * 0.5 : vec3(0.0))
-          + diff * sky(N) * 0.6;
-    } else {
-      float fr = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
-      col = vec3(0.01) * (0.2 + 0.7 * max(dot(N, normalize(vec3(-0.35, 0.8, 0.5))), 0.0)) + envSharp(R) * fr;
+      float metal = clamp(vFinish.x, 0.0, 1.0), rough = vFinish.y, coat = vFinish.w;
+      if (uPass == 0) {
+        outColor = vec4(lin2srgb(tone(shade(N, V, base, metal, rough, coat))), 1.0);
+        return;
+      }
+      // 透明玻璃：本体按不透明度着色，表面反射直接叠加（预乘 alpha）
+      vec3 R = reflect(-V, N);
+      float r = clamp(min(rough, 0.25), 0.02, 1.0);
+      vec3 spec = envBRDF(vec3(0.04), r, max(nv, 1e-3)) * envSpec(R, r);
+      vec3 body = base * (1.0 - metal) * irradiance(N) * op;
+      vec3 c = tone(body + spec);
+      float a = clamp(op + dot(spec, vec3(0.3)), 0.0, 1.0);
+      outColor = vec4(lin2srgb(c), a);
+      return;
     }
-    col = col / (1.0 + 0.2 * col);
-    outColor = vec4(lin2srgb(col), 1.0);
+    if (uPass != 0) discard;
+    vec3 col;
+    if (uUseBackTex && (vMat == 1 || vMat == 2)) {
+      // 背板照片：作为磨砂玻璃下的底色，再加一层玻璃的柔和反射
+      vec4 photo = texture(uBackTex, vUv);
+      vec3 base = srgb2lin(photo.rgb);
+      vec3 lit = base * (0.55 + 0.6 * irradiance(N)) ;
+      col = mix(uBack * 0.4, lit, photo.a) + envBRDF(vec3(0.04), 0.4, max(nv, 1e-3)) * envSpec(reflect(-V, N), 0.4) * 0.6;
+    } else if (vMat == 0 || vMat == 3) {
+      // 中框 / 按键：喷砂（或抛光）金属，带一层薄氧化膜
+      col = shade(N, V, uFrame, 1.0, uRough * 0.85, 0.3);
+    } else if (vMat == 1) {
+      // 背板磨砂玻璃：缎面，宽而柔的高光
+      col = shade(N, V, uBack, 0.0, max(uRough, 0.45), 0.0);
+    } else {
+      // 相机模组玻璃 / 镜头：深色镜面玻璃，反射清晰
+      col = shade(N, V, vec3(0.006), 0.0, 0.04, 1.0);
+    }
+    outColor = vec4(lin2srgb(tone(col)), 1.0);
   }`;
 
   const SCREEN_VS = `#version 300 es
@@ -545,6 +590,22 @@
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
   }
 
+  // 前摄开孔里的小镜头（只影响开孔内的像素，屏幕显示不变）：深色镀膜镜片 + 金属压圈 + 盖板玻璃反射的高光，
+  // 高光随观看方向在镜片上移动，看起来是一小块镜面而不是平涂的黑点。返回 sRGB。
+  vec3 lens(vec2 p, vec3 hole, vec3 vd) {
+    float r = length(p - hole.xy) / hole.z;
+    vec3 c = vec3(0.0012, 0.0014, 0.0022);
+    c += vec3(0.0035, 0.0045, 0.012) * (1.0 - smoothstep(0.0, 0.62, r));                 // 镜片镀膜的蓝紫底色
+    c += vec3(0.010) * (1.0 - smoothstep(0.0, 0.035, abs(r - 0.42)));                    // 内圈镜片边
+    c += vec3(0.020, 0.019, 0.018) * smoothstep(0.66, 0.70, r) * (1.0 - smoothstep(0.80, 0.86, r));   // 压圈
+    vec2 off = -vd.xy / max(vd.z, 0.25) * 0.22 + vec2(-0.22, 0.26);
+    float hl = exp(-pow(length((p - hole.xy) / hole.z - off) / 0.16, 2.0));
+    float hl2 = exp(-pow(length((p - hole.xy) / hole.z - off * vec2(-0.6, -0.5)) / 0.08, 2.0));
+    float rim = pow(1.0 - clamp(vd.z, 0.0, 1.0), 3.0) * smoothstep(0.55, 0.95, r);
+    c += vec3(0.55, 0.57, 0.62) * hl + vec3(0.12, 0.10, 0.16) * hl2 + vec3(0.05) * rim;
+    return lin2srgb(c);
+  }
+
   float aperture(vec2 p, vec3 hole, float px) {
     if (hole.z <= 0.0) return 0.0;
     return 1.0 - smoothstep(hole.z - px, hole.z + px, length(p - hole.xy));
@@ -586,12 +647,17 @@
     }
     vec2 q = pp - vec2(0.0, uScreenHalf.y - uCut.x);
     q.x = max(abs(q.x) - uCut.y, 0.0);
-    if (uCut.z > 0.0) scr *= smoothstep(uCut.z, uCut.z + px, length(q));
+    vec3 vd = normalize(d);
+    if (uCut.z > 0.0) {
+      float inCut = 1.0 - smoothstep(uCut.z, uCut.z + px, length(q));
+      // 圆形开孔（挖孔前摄）画成小镜头；胶囊形（灵动岛）保持纯黑
+      vec3 cutCol = uCut.y < 0.01 ? lens(pp, vec3(0.0, uScreenHalf.y - uCut.x, uCut.z), vd) : vec3(0.0);
+      scr = mix(scr, cutCol, inCut);
+    }
     float h0 = aperture(pp, uHole0, px), h1 = aperture(pp, uHole1, px), h2 = aperture(pp, uHole2, px);
-    scr = mix(scr, vec3(0.001, 0.002, 0.005), max(max(h0, h1), h2));
-    float glint0 = 1.0 - smoothstep(0.08, 0.3, length(pp - uHole0.xy));
-    float glint2 = 1.0 - smoothstep(0.08, 0.3, length(pp - uHole2.xy));
-    scr += vec3(0.003, 0.009, 0.024) * (h0 * glint0 + h2 * glint2);
+    if (h0 > 0.0) scr = mix(scr, lens(pp, uHole0, vd), h0);
+    if (h1 > 0.0) scr = mix(scr, lens(pp, uHole1, vd), h1);
+    if (h2 > 0.0) scr = mix(scr, lens(pp, uHole2, vd), h2);
 
     outColor = vec4(mix(vec3(0.004), scr, screen), 1.0);
   }`;
@@ -636,7 +702,7 @@
     attr('aPos', mesh.pos, 3);
     if (withNormals) {
       attr('aNor', mesh.nor, 3); attr('aMat', mesh.mat, 1); attr('aUv', mesh.uv, 2);
-      if (mesh.tint) { attr('aTint', mesh.tint, 3); attr('aFinish', mesh.finish, 2); }
+      if (mesh.tint) { attr('aTint', mesh.tint, 3); attr('aFinish', mesh.finish, 4); }
     } else {
       attr('aNor', mesh.nor, 3);
       attr('aLocal', mesh.local || mesh.pos.filter((_, i) => i % 3 !== 2), 2);
@@ -822,6 +888,7 @@
       gl.uniform1i(bodyProg.u.uUseBackTex, hasBackTexture ? 1 : 0);
       gl.bindVertexArray(v.dev.body.vao);
       setCommon(bodyProg, M, v);
+      gl.uniform1i(bodyProg.u.uPass, 0);
       gl.drawElements(gl.TRIANGLES, v.dev.body.count, gl.UNSIGNED_INT, 0);
     }
 
@@ -855,6 +922,31 @@
         gl.drawElements(gl.TRIANGLES, screen.screen.count, gl.UNSIGNED_INT, 0);
       }
     });
+    // 透明通道：模型里的镜头盖玻璃、闪光灯罩等，在不透明部分和屏幕之后叠加反射（不写深度）
+    const glassy = views.filter((v) => v.dev.spec.model);
+    if (glassy.length) {
+      gl.useProgram(bodyProg.p);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.depthMask(false);
+      gl.depthFunc(gl.LEQUAL);
+      // 覆层与下面的玻璃壳在网格细分上有微小起伏，略微拉近，避免局部被遮住出现块状花纹
+      gl.enable(gl.POLYGON_OFFSET_FILL);
+      gl.polygonOffset(-2, -24);
+      gl.uniform1i(bodyProg.u.uPass, 1);
+      for (const v of glassy) {
+        clip(v);
+        gl.uniform1i(bodyProg.u.uNative, 1);
+        gl.uniform1i(bodyProg.u.uUseBackTex, 0);
+        gl.bindVertexArray(v.dev.body.vao);
+        setCommon(bodyProg, M, v);
+        gl.drawElements(gl.TRIANGLES, v.dev.body.count, gl.UNSIGNED_INT, 0);
+      }
+      gl.disable(gl.POLYGON_OFFSET_FILL);
+      gl.depthMask(true);
+      gl.depthFunc(gl.LESS);
+      gl.disable(gl.BLEND);
+    }
     gl.bindVertexArray(null);
     gl.disable(gl.SCISSOR_TEST);
 
@@ -940,7 +1032,7 @@
     $('heroDir').textContent = S.theta < 0.5 ? '正对屏幕' : `从${Viz.dirName(S.psi)}看`;
     const duo = byId(ids[0]).surface;
     $('heroSub').textContent = `${duo ? (S.compare ? '机身偏转角' : '机身偏转角 · 折叠 ' + Math.round(S.fold) + '°') : '屏幕中心离轴角'} · 观看距离 ${Math.round(S.dist / 10)} cm`;
-    $('dataTag').textContent = ids.some((id) => !getModel(id)) ? '数据待测' : ids.some((id) => byId(id).surface) && DUO_PROFILES.some((p) => p.measurement?.temporary) ? '含临时替代数据' : '实测数据';
+    $('dataTag').textContent = ids.some((id) => !getModel(id)) ? '数据待测' : '实测数据';
     $('legend').classList.toggle('show', S.mode === 2);
     updatePad(M);
     updateCharts();
@@ -953,7 +1045,7 @@
       const b = binoStats(M, ids[0]);
       const html = capName(byId(ids[0]), 0) +
         `<div class="cap-stats">${stat(b.dl.toFixed(1), '%', '双眼亮度差')}${stat(b.j.toFixed(2), 'JNCD', '双眼色度差')}${stat(b.de.toFixed(1), '', '双眼 ΔE2000')}</div>` +
-        `<div class="note">全屏平均${S.mode === 2 ? ' · 颜色为离轴角 0–70°' : ''}${byId(ids[0]).surface ? ' · ' + DUO_NOTE : ''}</div>`;
+        `<div class="note">全屏平均${S.mode === 2 ? ' · 颜色为离轴角 0–70°' : ''}${byId(ids[0]).surface && DUO_NOTE ? ' · ' + DUO_NOTE : ''}</div>`;
       [0, 1].forEach((i) => placeCaption($('cap' + i), views[i], html));
       return;
     }
@@ -969,7 +1061,7 @@
       const e = getModel(ids[i]).evalAt(a.theta, a.psi);
       placeCaption(el, v, capName(byId(ids[i]), i) +
         `<div class="cap-stats">${stat(Math.round(e.yRatio * 100), '%', '亮度')}${stat(e.jncd.toFixed(1), 'JNCD', '色偏')}${stat(e.de00.toFixed(1), '', 'ΔE2000')}</div>` +
-        (byId(ids[i]).surface ? `<div class="note">${byId(ids[i]).sourceNote || DUO_NOTE}</div>` : ''));   // 每块屏只标自己的数据来源
+        '');
     });
   }
 
@@ -1212,7 +1304,8 @@
   }
   function applyLayout() {
     const W = window.innerWidth, H = window.innerHeight;
-    const L = W >= 1180 && H >= 600 ? 'wide' : W > 760 ? 'side' : 'sheet';
+    // 宽屏双栏需要足够宽度，否则手机被两侧栏挤小（如 iPad 横屏 1180）；平板竖屏用底部抽屉，让手机占满宽度
+    const L = W >= 1280 && H >= 600 ? 'wide' : W > 760 && W >= H * 0.95 ? 'side' : 'sheet';
     const body = document.body;
     body.dataset.layout = L;
     // 手机竖屏：设置默认收起，画面优先给手机；视角直接拖动手机调整
@@ -1223,7 +1316,6 @@
     if (L === 'wide' && !S.clean) {
       if (hud.parentElement !== rail) rail.prepend(hud);
       SECS.forEach((s) => (s.dataset.tab === 'view' && s.dataset.wide !== 'panel' ? rail : pb).appendChild(s));
-      pb.insertBefore($('secDist'), $('secHelp'));
     } else {
       if (hud.parentElement !== body) body.insertBefore(hud, rail);
       SECS.forEach((s) => pb.appendChild(s));
@@ -1362,7 +1454,7 @@
     $('devCards').innerHTML = DEVICES.map((d) => {
       const k = specKey(d) || d, suffix = d.slice(k.length).trim();
       const t = privacyText(d);
-      const sub = d === 'iPhone Duo' ? (DUO_PROFILES.some((p) => !p.sets) ? '内屏 / 外屏 · 数据待测' : DUO_PROFILES.some((p) => p.measurement?.temporary) ? '内屏实测 / 外屏临时替代' : '内屏 / 外屏 · 实测数据')
+      const sub = d === 'iPhone Duo' ? (DUO_PROFILES.some((p) => !p.sets) ? '内屏 / 外屏 · 数据待测' : '内屏 / 外屏 · 实测数据')
         : hasPrivacy(d) ? `${t.off} / ${t.on} 两组实测` : '一组实测';
       return `<button class="dev-card${d === S.device ? ' on' : ''}" data-d="${d}">` +
         `<span class="ph" style="--c1:${colorOf(d).swatch}"></span>` +
@@ -1413,7 +1505,7 @@
     $('fold').value = Math.round(S.fold);
     $('foldV').textContent = Math.round(S.fold) + '°';
     const missing = DUO_PROFILES.filter((p) => !p.sets).map((p) => surfaceName(p.surface)).join('、');
-    $('duoStatus').textContent = (missing ? `${missing}可视角数据待测，当前显示原图。` : DUO_NOTE + '。') + (S.compare ? '对比时外屏按合上、内屏按展开显示。' : '');
+    $('duoStatus').textContent = (missing ? `${missing}可视角数据待测，当前显示原图。` : '内屏、外屏均为可视角实测数据。') + (S.compare ? '对比时外屏按合上、内屏按展开显示。' : '');
   }
   let foldAnimation=null;
   function stopFoldAnimation(finishMix=false) {
@@ -1504,7 +1596,7 @@
   function devSub(d) {
     const t = privacyText(d);
     // 状态已在右侧分段里列出，这里只说明数据情况
-    return d === 'iPhone Duo' ? (DUO_PROFILES.some((p) => !p.sets) ? '内屏 / 外屏 · 数据待测' : DUO_PROFILES.some((p) => p.measurement?.temporary) ? '内屏实测 / 外屏临时替代' : '内屏 / 外屏 · 实测数据')
+    return d === 'iPhone Duo' ? (DUO_PROFILES.some((p) => !p.sets) ? '内屏 / 外屏 · 数据待测' : '内屏 / 外屏 · 实测数据')
       : hasPrivacy(d) ? `两组实测 · ${t.short}前后` : '一组实测';
   }
   function renderPicker() {

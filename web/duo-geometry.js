@@ -26,7 +26,9 @@
     for(let n=0;n<24;n++){const t=(lo+hi)/2;if(at(1,t)<depth)lo=t;else hi=t;}
     return at(0,(lo+hi)/2);
   }
-  const closed = [[0, 0, 0], [.00419135, .61196, .07723], [.00838275, 1.09029, .41282], [.0125742, 1.22656, .99537], [.01676555, 1.15484, 1.61563], [.0209570, 1.00918, 2.23029], [.0251484, .83883, 2.84139], [.0293398, .66778, 3.45379], [.0335312, .51110, 4.07112], [.03772255, .38197, 4.69582], [.0419140, .29365, 5.32862], [.0461055, .26058, 5.96773]].map(([u, x, z]) => [u * screens.inner.width, x, z]);
+  // 闭合时折痕处屏幕的截面（单侧，按弧长 u·内屏宽 取样）：泪滴形，底部是半径 1.925 mm 的圆弧，最宽 3.85 mm（CT 实测），
+  // 往上收窄到两侧直段的 0.52 mm 间隙；弧长与原来相同（7.263 mm），屏幕长度不变。
+  const closed = [[0.0,0.0,0.0],[0.0011526,0.18131,0.00856],[0.0023053,0.361,0.03415],[0.0034579,0.53748,0.07656],[0.0046105,0.70919,0.1354],[0.0057632,0.87459,0.21015],[0.0069158,1.03222,0.30014],[0.0080685,1.18066,0.40459],[0.0092211,1.31862,0.52255],[0.0103737,1.44484,0.65297],[0.0115264,1.55823,0.79471],[0.012679,1.65776,0.9465],[0.0138316,1.74255,1.10698],[0.0149843,1.81185,1.27474],[0.0161369,1.86504,1.44828],[0.0172896,1.90165,1.62606],[0.0184422,1.92135,1.80649],[0.0195948,1.92389,1.98798],[0.0207475,1.90837,2.16881],[0.0219001,1.87545,2.34731],[0.0230527,1.8269,2.52222],[0.0242054,1.76495,2.69286],[0.025358,1.69193,2.85908],[0.0265107,1.61001,3.0211],[0.0276633,1.52112,3.17942],[0.0288159,1.42694,3.33465],[0.0299686,1.3289,3.48748],[0.0311212,1.22828,3.63862],[0.0322738,1.12624,3.78881],[0.0334265,1.02385,3.93876],[0.0345791,0.92217,4.0892],[0.0357318,0.82232,4.24085],[0.0368844,0.72546,4.39443],[0.038037,0.63294,4.55066],[0.0391897,0.54627,4.7102],[0.0403423,0.4672,4.87363],[0.0414949,0.39776,5.04137],[0.0426476,0.3402,5.21353],[0.0438002,0.29683,5.38979],[0.0449529,0.26978,5.56927],[0.0461055,0.26058,5.75054]].map(([u, x, z]) => [u * screens.inner.width, x, z]);
   const halfCrease = closed[closed.length - 1][0];
   const residualAmplitude=.1/(2*216/(343*Math.sqrt(7)));
   const residual={peakValley:.1,centralSlopeDegrees:1.1,halfWidth:residualAmplitude/Math.tan(1.1*Math.PI/180)};
@@ -67,8 +69,20 @@
     const d = screens.outer, p = leafPose(-1, angle), point = rotate([-40.92-(u-.5)*d.width,(v-.5)*d.height,-5.24], p.rotation);
     return { point: point.map((n,i)=>n+p.position[i]), normal:rotate([0,0,-1],p.rotation),tangentU:rotate([-1,0,0],p.rotation),tangentV:[0,1,0] };
   }
+  // 内屏的“屏幕中心”取整块屏（沿屏幕弧长均匀取样）的形心，而不是折痕：
+  // 这样改变展开角度时，观看距离始终量到屏幕中央，屏幕不会随着折起越靠越近。
+  const centroidCache={};
+  function innerCentroid(angle) {
+    const key=Math.round(angle*100);
+    if(centroidCache[key])return centroidCache[key];
+    let z=0;const n=96,w=screens.inner.width;
+    for(let i=0;i<n;i++)z+=foldPoint(((i+.5)/n-.5)*w,0,angle).point[2]/n;
+    return (centroidCache[key]=[0,0,z]);
+  }
   function frame(angle, surface='inner', mix=surface==='outer'?1:0) {
-    return { origin: mix?surfaceFrame('outer',.5,.5,angle).point.map(n=>n*mix):[0,0,0], rotation: (Math.PI-(180-angle)*Math.PI/360)*mix };
+    const inner=innerCentroid(angle);
+    const origin=mix?surfaceFrame('outer',.5,.5,angle).point.map((n,i)=>inner[i]*(1-mix)+n*mix):inner;
+    return { origin, rotation: (Math.PI-(180-angle)*Math.PI/360)*mix };
   }
   function orient(p, f, direction=false) { return rotate(direction?p:p.map((n,i)=>n-f.origin[i]),f.rotation); }
   function buildScreen(key, angle, surface='inner', backing=false, mix) {

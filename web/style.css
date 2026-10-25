@@ -291,7 +291,7 @@ body[data-layout="sheet"] .hero-num { font-size: 34px; }
 body[data-layout="sheet"] .hero-dir { font-size: 12.5px; }
 body[data-layout="sheet"] .hero-sub { display: none; }
 body[data-layout="sheet"] #panel {
-  position: fixed; left: 0; right: 0; bottom: 0; max-height: 56vh; border-radius: 20px 20px 0 0;
+  position: fixed; left: 50%; right: auto; bottom: 0; width: min(100%, 560px); transform: translateX(-50%); max-height: 56vh; border-radius: 20px 20px 0 0;
   border-bottom: 0; border-left: 0; border-right: 0; display: flex; flex-direction: column; overflow: hidden;
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -386,7 +386,6 @@ body.mode-3d #tip, body.mode-3d #tip2, body.mode-3d #hint, body.mode-3d .sframe 
   -webkit-backdrop-filter: blur(18px) saturate(1.2); backdrop-filter: blur(18px) saturate(1.2);
   border: 1px solid var(--line-2); box-shadow: 0 14px 36px rgba(0, 0, 0, .45);
 }
-#quickbar.solo { width: auto; }
 .qc-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .qb-chip { display: flex; align-items: center; gap: 8px; min-width: 0; height: 40px; padding: 0 12px; border-radius: 12px; background: transparent; white-space: nowrap; }
 .qb-chip:hover { background: var(--raise); }
@@ -402,11 +401,10 @@ body.mode-3d #tip, body.mode-3d #tip2, body.mode-3d #hint, body.mode-3d .sframe 
 .qc-switch[aria-checked="true"] { color: var(--text); }
 .qc-fold { display: flex; align-items: center; gap: 10px; padding: 2px 12px 6px; color: var(--text-2); }
 .qc-fold input { flex: 1; min-width: 0; margin: 0; height: 28px; }
-.qc-fold b { flex: none; width: 3em; text-align: right; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.qc-fold b { flex: none; width: 3.8em; white-space: nowrap; text-align: right; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .qc-ico { flex: none; }
-body[data-layout="sheet"] #quickbar { width: calc(100vw - 24px); padding: 4px; }
-body[data-layout="sheet"] #quickbar.solo { width: auto; }
-body[data-layout="sheet"] .qb-chip { padding: 0 10px; }
+body[data-layout="sheet"] #quickbar { width: min(calc(100vw - 24px), 480px); padding: 4px; }
+body[data-layout="sheet"] body[data-layout="sheet"] .qb-chip { padding: 0 10px; }
 body.clean #quickbar, body.mode-3d #quickbar, body.mode-3d #picker, body.mode-3d #scrim { display: none !important; }
 
 /* 机型选择：电脑上是快捷条上方的弹出框，手机上是底部弹层 */
@@ -418,7 +416,7 @@ body[data-layout="sheet"] #scrim { background: rgba(0, 0, 0, .42); }
   border-radius: 18px; background: var(--surface-solid); border: 1px solid var(--line-2); box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
 }
 body[data-layout="sheet"] #picker {
-  left: 0; right: 0; bottom: 0; width: auto; max-height: 82vh; border-radius: 20px 20px 0 0; border-bottom: 0;
+  left: 50% !important; right: auto; bottom: 0; width: min(100%, 560px); transform: translateX(-50%); max-height: 82vh; border-radius: 20px 20px 0 0; border-bottom: 0;
   padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
 }
 .pk-head { display: flex; align-items: center; justify-content: space-between; }
@@ -440,7 +438,17 @@ body[data-layout="sheet"] .pk-state { flex: 1 1 100%; margin: 0 0 6px 46px; }
 body[data-layout="sheet"] .pk-state button { flex: 1; padding: 8px 10px; font-size: 13px; }
 /* 手机横屏等矮窗口：Duo 卡片压成一行（机型 · 展开开关 · 角度滑条） */
 @media (max-height: 519px) {
-  #quickbar.duo { flex-direction: row; align-items: center; width: 640px; }
-  #quickbar.duo .qc-row { flex: none; }
-  #quickbar.duo .qc-fold { flex: 1; min-width: 160px; padding: 0 8px 0 4px; }
+  #quickbar { flex-direction: row; flex-wrap: wrap; align-items: center; width: 640px; }
+  #quickbar .qc-row { flex: none; }
+  #quickbar .qc-fold { flex: 1 1 180px; min-width: 160px; padding: 0 8px 0 4px; }
+}
+.qc-dist { padding-top: 0; }
+.qc-gap { width: 20px; height: 1px; }
+#quickbar:not(.duo) .qc-dist .qc-gap { display: none; }
+/* 宽屏两侧栏在较窄的桌面上略收窄，把空间留给手机 */
+@media (max-width: 1440px) {
+  body[data-layout="wide"] #rail, body[data-layout="wide"] #panel { width: 280px; }
+}
+@media (min-width: 561px) {
+  body[data-layout="sheet"] #panel { border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
 }
