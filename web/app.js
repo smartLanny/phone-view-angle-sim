@@ -614,12 +614,6 @@
   ${COLOR_GLSL}
   ${ENV_GLSL}
 
-  float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
-  float vnoise(vec2 p) {
-    vec2 i = floor(p), f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
-  }
 
   vec3 lut(int blk, float th, float ps) {
     float x = clamp(th, 0.0, float(uLutW - 1));
@@ -719,23 +713,17 @@
     vec3 col = mix(vec3(0.004), scr, screen);
 
     // 表面反射只加在 Duo 内屏上（显示内容按实测着色，这里只在其上叠加盖板表面反射的环境光）：
-    // 防眩光磨砂膜把影棚灯光打散成一片柔和的雾光，近看有细微颗粒；右半屏顶部正中的屏下摄像头区域没有磨砂膜，是一小块镜面，
-    // 能看到清晰的灯光倒影，同时那里的像素稍稀，显示略暗。
+    // 防眩光磨砂膜把影棚灯光打散成一片柔和的雾光；右半屏靠上的屏下摄像头圆片没有磨砂，是一小块镜面，
+    // 灯光倒影清晰但整体反射更弱，所以多数角度下是一个略深的小圆点，转到对着灯时才亮起一下。
     if (uMatte > 0.0) {
       vec3 Nw = normalize(uModel * vNormal), V = normalize(uEye - vWorld);
       float nv = clamp(dot(Nw, V), 1e-3, 1.0);
       vec3 R = reflect(-V, Nw);
       float udc = uUdc.z > 0.0 ? 1.0 - smoothstep(uUdc.z - px, uUdc.z + px, length(pp - uUdc.xy)) : 0.0;
-      // 颗粒：约 25 µm 的起伏，像素大于颗粒时逐渐抹平，避免远看闪烁
-      float gs = 0.025, fade = 1.0 - smoothstep(gs * 0.6, gs * 2.0, px);
-      float grain = mix(1.0, 0.65 + 0.7 * vnoise(pp / gs), fade);
-      vec3 haze = envBRDF(vec3(0.04), 0.55, nv) * envSpec(R, 0.55) * grain * 1.15;
-      vec3 mirror = envBRDF(vec3(0.04), 0.03, nv) * envSpec(R, 0.03);
-      // 镜面圆片边缘：磨砂膜开孔的一圈细边，斜看时更明显
-      float ring = udc * (1.0 - smoothstep(0.0, max(px * 1.5, 0.05), uUdc.z - length(pp - uUdc.xy)));
-      vec3 lin = srgb2lin(col) * (1.0 - 0.05 * udc);
-      lin += mix(haze, mirror, udc) + ring * 0.02 * (1.0 - nv * 0.5);
-      col = lin2srgb(lin);
+      // 参数与苹果官网 AR 模型内屏材质一致：清漆层在磨砂区强度 0.8、粗糙度 0.4；屏下摄像头圆片强度 0.4、粗糙度 0.05
+      vec3 haze = envBRDF(vec3(0.04), 0.4, nv) * envSpec(R, 0.4) * 0.8;
+      vec3 mirror = envBRDF(vec3(0.04), 0.05, nv) * envSpec(R, 0.05) * 0.4;
+      col = lin2srgb(srgb2lin(col) + mix(haze, mirror, udc));
     }
     outColor = vec4(col, 1.0);
   }`;
@@ -798,7 +786,7 @@
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(mesh.idx), gl.STATIC_DRAW);
     gl.bindVertexArray(null);
-    return { vao, count: mesh.idx.length, dispose() { buffers.forEach((b) => gl.deleteBuffer(b)); gl.deleteVertexArray(vao); } };
+    return { vao, count: mesh.idx.length, split: mesh.hingeFrom ?? mesh.idx.length, dispose() { buffers.forEach((b) => gl.deleteBuffer(b)); gl.deleteVertexArray(vao); } };
   }
   gl.useProgram(screenProg.p);
   gl.uniform1i(screenProg.u.uImg, 0);
@@ -1019,7 +1007,16 @@
       gl.bindVertexArray(v.dev.body.vao);
       setCommon(bodyProg, M, v);
       gl.uniform1i(bodyProg.u.uPass, 0);
-      gl.drawElements(gl.TRIANGLES, v.dev.body.count, gl.UNSIGNED_INT, 0);
+      const B = v.dev.body;
+      gl.drawElements(gl.TRIANGLES, B.split, gl.UNSIGNED_INT, 0);
+      if (B.count > B.split) {
+        // Duo 转轴：带正向深度偏移单独画。它在展开时整个藏在屏幕后面，侧面几乎侧对视线，
+        // 不往后推的话深度插值误差会让它偶尔穿过屏幕，正面看显示成两条细竖线；斜率相关的偏移正好只推这种侧对的面
+        gl.enable(gl.POLYGON_OFFSET_FILL);
+        gl.polygonOffset(2, 8);
+        gl.drawElements(gl.TRIANGLES, B.count - B.split, gl.UNSIGNED_INT, B.split * 4);
+        gl.disable(gl.POLYGON_OFFSET_FILL);
+      }
     }
 
     // 透明通道：模型里的镜头盖玻璃、闪光灯罩、背板磨砂覆层等，在不透明部分之后、屏幕之前叠加（不写深度）。
@@ -1043,7 +1040,7 @@
         bindModelTextures(v.dev.spec.model);
         gl.bindVertexArray(v.dev.body.vao);
         setCommon(bodyProg, M, v);
-        gl.drawElements(gl.TRIANGLES, v.dev.body.count, gl.UNSIGNED_INT, 0);
+        gl.drawElements(gl.TRIANGLES, v.dev.body.split, gl.UNSIGNED_INT, 0);
       }
       gl.disable(gl.POLYGON_OFFSET_FILL);
       gl.depthMask(true);
