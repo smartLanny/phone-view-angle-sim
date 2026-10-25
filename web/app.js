@@ -262,16 +262,20 @@
     const W = canvas.clientWidth, H = canvas.clientHeight, L = document.body.dataset.layout;
     const rc = (id) => $(id).getBoundingClientRect();
     if (S.clean) return { x0: 0, x1: W, top: rc('hud').bottom + 8, bottom: H - 12 };
-    if (L === 'wide') return { x0: rc('rail').right + 12, x1: rc('panel').left - 12, top: 20, bottom: H - 16 };
-    // 手机竖屏 / 横屏矮窗口：读数与数据卡都在顶部同一行，手机占满其下的区域
+    // 单台时数据卡停靠在舞台右上角（各布局都是）；手机占满其下的区域
     const capBottom = capDocked() && $('cap0').style.display === 'block' ? rc('cap0').bottom : 0;
+    if (L === 'wide') return { x0: rc('rail').right + 12, x1: rc('panel').left - 12, top: Math.max(20, capBottom + 8), bottom: H - 16 };
     const top = Math.max(rc('hud').bottom, capBottom) + (L === 'side' ? 8 : 6);
     if (L === 'side') return { x0: 0, x1: rc('panel').left - 8, top, bottom: H - 16 };
     return { x0: 0, x1: W, top, bottom: rc('panel').top - 6 };
   }
-  /** 屏幕紧凑（手机竖屏，或手机横屏这类矮窗口）：手机按正对时放满，数据卡停靠到顶部。 */
+  /** 屏幕紧凑（手机竖屏，或手机横屏这类矮窗口）：手机按正对时放满。 */
   const compactStage = () => document.body.dataset.layout === 'sheet' || window.innerHeight < 520;
-  const capDocked = () => compactStage() && !S.compare && !S.stereo && !S.clean;
+  /**
+   * 单台时数据卡（亮度 / 色偏 / ΔE）不放在手机下方，而是停靠到舞台右上角、和左上角的角度读数同一行：
+   * 横屏时顶部这一行本来就被读数占着，数据卡挪上去后手机可以多占一整张卡片的高度。对比 / 立体时仍跟在各自手机下方。
+   */
+  const capDocked = () => !S.compare && !S.stereo && !S.clean;
 
   /**
    * 每台手机一个区域（对比时左右并排），共用同一缩放以便公平对比。
@@ -349,6 +353,9 @@
     // 舞台聚光跟着手机走；提示文字居中于舞台
     document.documentElement.style.setProperty('--sx', ((areaX0 + areaW / 2) / W * 100).toFixed(1) + '%');
     $('hint').style.left = areaX0 + areaW / 2 + 'px';
+    // 宽屏时右上角停着数据卡，操作提示挪到它下面，免得窄一些的窗口里两者重叠
+    const capR = document.body.dataset.layout === 'wide' && capDocked() && $('cap0').style.display === 'block' ? $('cap0').getBoundingClientRect() : null;
+    $('hint').style.top = capR ? capR.bottom + 6 + 'px' : '';
     return views;
   }
   // ---------- WebGL ----------
@@ -712,7 +719,7 @@
     vec3 col = mix(vec3(0.004), scr, screen);
 
     // 表面反射只加在 Duo 内屏上（显示内容按实测着色，这里只在其上叠加盖板表面反射的环境光）：
-    // 防眩光磨砂膜把影棚灯光打散成一片柔和的雾光，近看有细微颗粒；右上角屏下摄像头区域没有磨砂膜，是一小块镜面，
+    // 防眩光磨砂膜把影棚灯光打散成一片柔和的雾光，近看有细微颗粒；右半屏顶部正中的屏下摄像头区域没有磨砂膜，是一小块镜面，
     // 能看到清晰的灯光倒影，同时那里的像素稍稀，显示略暗。
     if (uMatte > 0.0) {
       vec3 Nw = normalize(uModel * vNormal), V = normalize(uEye - vWorld);
@@ -726,7 +733,7 @@
       vec3 mirror = envBRDF(vec3(0.04), 0.03, nv) * envSpec(R, 0.03);
       // 镜面圆片边缘：磨砂膜开孔的一圈细边，斜看时更明显
       float ring = udc * (1.0 - smoothstep(0.0, max(px * 1.5, 0.05), uUdc.z - length(pp - uUdc.xy)));
-      vec3 lin = srgb2lin(col) * (1.0 - 0.08 * udc);
+      vec3 lin = srgb2lin(col) * (1.0 - 0.05 * udc);
       lin += mix(haze, mirror, udc) + ring * 0.02 * (1.0 - nv * 0.5);
       col = lin2srgb(lin);
     }
@@ -1125,6 +1132,12 @@
     el.style.display = 'block';
     el.style.left = dock ? '' : v.cx + 'px';
     el.style.top = dock ? '' : v.bottomY + 8 + 'px';
+    // 横屏（侧栏 / 宽屏）停靠时贴着舞台右沿；宽度不超过舞台里角度读数右边剩下的空间
+    const L = document.body.dataset.layout, side = dock && (L === 'side' || L === 'wide');
+    const stageRight = side ? $('panel').getBoundingClientRect().left - (L === 'wide' ? 12 : 16) : 0;
+    const stageLeft = L === 'wide' ? $('rail').getBoundingClientRect().right + 12 : $('hud').getBoundingClientRect().right + 16;
+    el.style.right = side ? canvas.clientWidth - stageRight + 'px' : '';
+    el.style.maxWidth = side ? Math.max(stageRight - stageLeft, 180) + 'px' : '';
     // 停靠时数据卡高度决定手机区域上沿，高度变化后再排一次
     if (dock && el.offsetHeight !== el._dockH) { el._dockH = el.offsetHeight; requestRender(); }
     if (!dock) el._dockH = 0;

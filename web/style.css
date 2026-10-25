@@ -314,12 +314,15 @@ body[data-layout="sheet"] .caption { padding: 6px 12px 7px; }
 body[data-layout="sheet"] .cap-stats { gap: 12px; margin-top: 3px; }
 body[data-layout="sheet"] .cap-stats b { font-size: 15px; }
 /* 单台时数据卡停靠右上角，和左侧的角度读数同一行 */
-body[data-layout="sheet"] .caption.dock, body[data-layout="side"] .caption.dock {
+body[data-layout="sheet"] .caption.dock, body[data-layout="side"] .caption.dock, body[data-layout="wide"] .caption.dock {
   left: auto; right: 12px; top: max(10px, env(safe-area-inset-top)); transform: none; max-width: calc(100% - 130px);
   padding: 2px 4px; text-align: right; white-space: normal;
   background: transparent; border: 0; -webkit-backdrop-filter: none; backdrop-filter: none;
 }
-body[data-layout="side"] .caption.dock { right: 348px; top: 12px; max-width: calc(100% - 348px - 150px); }
+body[data-layout="side"] .caption.dock { top: 14px; }
+body[data-layout="wide"] .caption.dock { top: 18px; }
+/* 横屏侧栏布局：折叠角、观看距离已在下方快捷卡片上，读数只保留角度，顶部这一行更矮 */
+body[data-layout="side"] .hero-sub { display: none; }
 .caption.dock .cap-name { display: none; }   /* 机型名已在画面下方的快捷条上 */
 .caption.dock .cap-stats { justify-content: flex-end; gap: 14px; margin-top: 4px; }
 .caption.dock .cap-stats div { align-items: flex-end; }
@@ -346,7 +349,7 @@ body.clean #hud { position: fixed; left: 28px; top: 24px; padding: 0; }
   body[data-layout="side"] .hero-dir { font-size: 12.5px; }
   body[data-layout="side"] .hero-sub { display: none; }
   body[data-layout="side"] #panel { top: 8px; bottom: 8px; right: 8px; }
-  body[data-layout="side"] .caption.dock { right: 340px; top: 8px; }
+  body[data-layout="side"] .caption.dock { top: 8px; }
 }
 @media (max-height: 840px) {
   .hero-num { font-size: 42px; }
