@@ -5,44 +5,63 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>可视角度仿真</title>
-<link rel="stylesheet" href="style.css?v=20261026-dock">
+<link rel="stylesheet" href="style.css?v=20261027-ui">
 </head>
 <body data-layout="wide">
 <div class="sframe" id="sf0"></div>
 <div class="sframe" id="sf1"></div>
 <canvas id="gl" aria-label="手机屏幕可视角仿真画面"></canvas>
 <div id="scene3d" aria-label="三维场景演示"></div>
-<!-- 三维场景演示（做动画用）：默认不显示，从“画面 → 更多”进入；进入后顶部出现这个切换，可回到屏幕仿真 -->
+<!-- 场景演示（三维）时顶部的模式切换；屏幕仿真时切换在左栏（宽屏）或“画面”页 -->
 <nav class="app-mode seg" id="appMode" aria-label="模式">
-  <button data-v="scene">场景演示</button>
   <button data-v="sim" class="on">屏幕仿真</button>
+  <button data-v="scene">场景演示</button>
 </nav>
 
-<!-- 宽屏时整体移入左栏；其他布局时浮在舞台左上角 -->
+<!-- 读数：在舞台上方（宽屏在两栏之间的顶部一行；手机 / 平板是顶部一行）。单台时右侧是三项指标，对比 / 立体时指标在各台手机下方 -->
 <header id="hud">
-  <div class="brand">
-    <span class="logo" aria-hidden="true"></span>可视角度仿真
-    <span class="tag" id="dataTag">实测数据</span>
+  <div class="hud-main">
+    <div class="hero">
+      <span class="hero-num" id="heroTheta">0°</span>
+      <span class="hero-dir" id="heroDir">正对屏幕</span>
+      <button id="resetBtn" class="hud-reset" aria-label="回正" title="回到正对（双击画面 / 0 键）" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/></svg></button>
+    </div>
+    <div class="hero-sub" id="heroSub">屏幕中心</div>
   </div>
-  <div class="hero">
-    <span class="hero-num" id="heroTheta">0°</span>
-    <span class="hero-dir" id="heroDir">正对屏幕</span>
-  </div>
-  <div class="hero-sub" id="heroSub">屏幕中心离轴角</div>
+  <div class="hud-stats" id="hudStats"></div>
 </header>
 
-<aside id="rail" aria-label="视角"></aside>
+<!-- 宽屏左栏：品牌、模式切换、观看方向、离轴角曲线、显示方式；平板竖屏时是底部常驻数据区 -->
+<aside id="rail" aria-label="视角">
+  <div class="rail-head">
+    <div class="brand"><span class="logo" aria-hidden="true"></span>可视角度仿真<span class="tag" id="dataTag">实测数据</span></div>
+    <button class="icon-btn present-btn" title="演示模式：隐藏界面（H）" aria-label="演示模式"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  </div>
+  <nav class="seg mode-switch" aria-label="模式"><button data-v="sim" class="on">屏幕仿真</button><button data-v="scene">场景演示</button></nav>
+</aside>
 
 <aside id="panel" aria-label="设置">
-  <!-- 手机竖屏：常驻的把手 + 分页，设置内容默认收起，把画面留给手机（视角直接拖动手机调整） -->
+  <!-- 宽屏：标题 + 收起按钮；收起后只剩一列图标 -->
+  <div id="panelHead">
+    <h2>设置</h2>
+    <button class="icon-btn" id="panelMin" aria-label="收起设置" title="收起设置"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M14.5 4.5v15"/></svg></button>
+  </div>
+  <nav id="panelRail" aria-label="设置">
+    <button class="rail-btn" data-sec="secMode" aria-label="展开设置" title="展开设置"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M14.5 4.5v15"/></svg></button>
+    <button class="rail-btn" data-sec="secMode"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg><span>对比</span></button>
+    <button class="rail-btn" data-sec="secDevice"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/></svg><span>机型</span></button>
+    <button class="rail-btn" data-sec="secColors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="8.5" cy="10" r="1.2"/><circle cx="12" cy="7.5" r="1.2"/><circle cx="15.5" cy="10" r="1.2"/></svg><span>颜色</span></button>
+    <button class="rail-btn" data-sec="secPattern"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5-8 8"/></svg><span>画面</span></button>
+  </nav>
+  <!-- 手机竖屏：把手 + 快捷条 + 分页常驻，设置内容按需展开；侧栏布局时快捷条也放在这里 -->
   <div id="quick">
     <button id="grab" aria-label="展开 / 收起设置" aria-expanded="false"><span></span></button>
   </div>
   <nav id="tabs" role="tablist">
-    <button data-tab="view" class="on" role="tab">视角</button>
-    <button data-tab="device" role="tab">机型</button>
-    <button data-tab="screen" role="tab">画面</button>
-    <span class="tabs-fold" aria-hidden="true"></span>
+    <button data-tab="view" class="on" role="tab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg>视角</button>
+    <button data-tab="device" role="tab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/></svg>机型</button>
+    <button data-tab="screen" role="tab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5-8 8"/></svg>画面</button>
+    <button class="icon-btn" id="panelClose" aria-label="关闭设置"><svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>
   </nav>
   <div id="panelBody">
 
@@ -50,6 +69,10 @@
     <section class="sec" data-tab="view" id="secPad">
       <div class="sec-head">
         <h2>观看方向</h2>
+        <div class="seg mini" id="padSide" hidden aria-label="方向盘显示哪一台">
+          <button data-v="0" class="on" title="左侧"><span class="key" style="--k:var(--s1)"></span></button>
+          <button data-v="1" title="右侧"><span class="key" style="--k:var(--s2)"></span></button>
+        </div>
         <button id="sweep" class="play mini-play" title="自动扫描 0°→70°（空格）" aria-label="自动扫描"><span class="ico"></span><span class="lbl">扫描</span></button>
         <div class="seg mini" id="padMetric">
           <button data-v="lum" class="on">亮度</button>
@@ -91,29 +114,8 @@
       </div>
     </section>
 
-    <section class="sec" data-tab="device" id="secDevice">
-      <h2>机型</h2>
-      <div class="dev-cards" id="devCards"></div>
-      <p class="note">防窥、贴膜和 Duo 的开合在手机画面下方的快捷卡片上切换。</p>
-    </section>
-
-    <section class="sec" data-tab="device" id="secSlots" hidden>
-      <div class="sec-head">
-        <h2>对比</h2>
-        <button id="swapSlots" class="mini-btn" title="左右互换">⇄ 互换</button>
-      </div>
-      <label class="slot"><span class="slot-side">左</span><span class="key" style="--k:var(--s1)"></span><select id="slot0" aria-label="左侧"></select></label>
-      <label class="slot"><span class="slot-side">右</span><span class="key" style="--k:var(--s2)"></span><select id="slot1" aria-label="右侧"></select></label>
-    </section>
-
-    <section class="sec" data-tab="device" id="secFold" hidden>
-      <h2>iPhone Duo 数据</h2>
-      <p class="note" id="duoStatus">内外屏可视角数据待测，当前显示原图。</p>
-    </section>
-
     <section class="sec" data-tab="device" id="stereoGroup" hidden>
-      <h2>双眼立体</h2>
-      <div class="seg" id="stereoView">
+            <div class="seg" id="stereoView">
         <button data-v="0" class="on">平行视</button>
         <button data-v="1">交叉视</button>
       </div>
@@ -125,6 +127,22 @@
       <input type="range" id="ipd" min="54" max="72" step="1" value="63">
       <p class="note"><span id="sepInfo"></span>　左图为左眼、右图为右眼所见（交叉视时对调）。平行视时在两图之间竖一张纸卡隔开双眼，放松眼睛让两图重合；融合困难时缩小画面或减小间隙。</p>
     </section>
+
+    <section class="sec" data-tab="device" id="secDevice">
+      <h2>机型</h2>
+      <div class="dev-cards" id="devCards"></div>
+      
+    </section>
+
+    <section class="sec" data-tab="device" id="secSlots" hidden>
+      <div class="sec-head">
+        <h2>对比</h2>
+        <button id="swapSlots" class="mini-btn" title="左右互换"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg>互换</button>
+      </div>
+      <button class="slot-btn" data-side="0"><span class="key" style="--k:var(--s1)"></span><span class="slot-txt"><b id="slotName0"></b><small id="slotSub0"></small></span><svg class="slot-caret" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg></button>
+      <button class="slot-btn" data-side="1"><span class="key" style="--k:var(--s2)"></span><span class="slot-txt"><b id="slotName1"></b><small id="slotSub1"></small></span><svg class="slot-caret" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg></button>
+    </section>
+
 
     <section class="sec" data-tab="device" id="secColors">
       <h2>机身颜色</h2>
@@ -144,10 +162,10 @@
         <button data-p="gray">灰阶</button>
         <label class="upload">上传…<input type="file" id="file" accept="image/*"></label>
       </div>
-      <p class="note">也可以把图片直接拖进窗口或粘贴。</p>
+      <p class="note hover-only">也可以把图片直接拖进窗口或粘贴。</p>
     </section>
 
-    <section class="sec" data-tab="screen" id="secDisplay">
+    <section class="sec" data-tab="screen" data-wide="rail" id="secDisplay">
       <h2>显示方式</h2>
       <div class="seg" id="mode">
         <button data-v="0" class="on">仿真效果</button>
@@ -165,6 +183,15 @@
       </div>
     </section>
 
+    <section class="sec" data-tab="screen" id="secPresent">
+      <h2>演示</h2>
+      <div class="present-row">
+        <button id="open3d" class="wide-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="6.5" r="3"/><path d="M6 21v-3.5a6 6 0 0 1 12 0V21"/></svg>三维场景演示</button>
+        <button class="wide-btn present-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>隐藏界面</button>
+      </div>
+      <p class="note">三维场景可编排播放、导出视频。隐藏界面后，移动指针或轻点画面，右下角出现“退出演示”。</p>
+    </section>
+
     <section class="sec" data-tab="screen" id="secHelp">
       <details class="keys-box">
       <summary>快捷键</summary>
@@ -173,15 +200,10 @@
         <dt>滚轮</dt><dd>观看距离</dd>
         <dt>方向键</dt><dd>微调 2°</dd>
         <dt>空格</dt><dd>自动扫描</dd>
-        <dt>H</dt><dd>隐藏界面（录屏）</dd>
+        <dt>H</dt><dd>隐藏界面</dd>
         <dt>双击 / 0</dt><dd>回到正对</dd>
         <dt>P</dt><dd>防窥开关</dd>
       </dl>
-      </details>
-      <details class="keys-box more-box">
-      <summary>更多</summary>
-      <button id="open3d" class="more-btn">三维场景演示</button>
-      <p class="note">人物拿手机的三维场景（正视、正常手持、放在桌上、地铁旁座、侧卧），可编排播放、导出视频，用来做演示动画。也可以在网址后加 <code>#mode=3d</code> 直接打开。</p>
       </details>
     </section>
 
@@ -192,7 +214,10 @@
 <div id="quickbar" role="group" aria-label="快捷切换">
   <div class="qc-row">
     <button id="devChip" class="qb-chip" aria-haspopup="dialog" aria-expanded="false"><span class="qb-dots" id="devDots"></span><span class="qb-name" id="devName"></span><svg class="qb-caret" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 7.5l3-3 3 3"></path></svg></button>
+    <button class="qc-chip" id="qcFoldChip" data-qc="fold" aria-label="展开角度"><svg width="16" height="14" viewBox="0 0 20 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="1.5" y="1.5" width="17" height="13" rx="2.2"></rect><path d="M10 2v12" stroke-dasharray="1.6 1.8"></path></svg><b id="foldChipV">180°</b></button>
+    <button class="qc-chip" id="qcDistChip" data-qc="dist" aria-label="观看距离"><svg width="16" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M1.5 7S4.5 1.8 9 1.8 16.5 7 16.5 7 13.5 12.2 9 12.2 1.5 7 1.5 7z"></path><circle cx="9" cy="7" r="2.3"></circle></svg><b id="distChipV">30 cm</b></button>
     <button id="qcSwitch" class="qc-switch" role="switch" aria-checked="false"><span class="qc-lbl" id="qcLbl"></span><span class="switch" aria-hidden="true"></span></button>
+    <button class="icon-btn" id="qbSettings" aria-label="设置" title="设置"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
   </div>
   <div class="qc-fold" id="qcFold">
     <svg class="qc-ico" width="12" height="16" viewBox="0 0 12 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="13" rx="2.2"></rect></svg>
@@ -229,6 +254,7 @@
 <div class="caption" id="cap0"></div>
 <div class="caption" id="cap1"></div>
 <div id="toast"></div>
+<button id="cleanExit" aria-label="退出演示模式">退出演示</button>
 <div id="hint">拖动画面转动手机 · 拖动左侧方向盘直接选角度 · 滚轮调距离 · 空格自动扫描</div>
 <div id="drop">松开以加载图片</div>
 
@@ -240,8 +266,8 @@
 <script src="devices.js?v=20261026-18pm"></script>
 <script src="duo-geometry.js?v=20261026-variants"></script>
 <script src="phone3d.js?v=20261026-18pm"></script>
-<script src="viz.js?v=20261024-duo"></script>
+<script src="viz.js?v=20261027-ui"></script>
 <!-- 三维场景（scene3d-person.js、scene3d.js）只在进入场景演示时再加载，见 app.js -->
-<script src="app.js?v=20261026-ui-cleanup"></script>
+<script src="app.js?v=20261027-ui"></script>
 </body>
 </html>

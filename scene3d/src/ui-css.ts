@@ -63,10 +63,16 @@ export const CSS = /* css */ `
 .s3d-toggle input:focus-visible + .s3d-sw { outline: 2px solid var(--ac); outline-offset: 2px; }
 
 /* 调整面板 */
-.s3d-adjust { position: absolute; left: 50%; bottom: calc((84px + var(--bar-extra, 0px)) * var(--k) + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 100%; width: 300px; padding: 14px 16px 12px; border-radius: 14px;
+.s3d-adjust { position: absolute; right: calc(20px * var(--k)); top: calc(76px * var(--k)); transform: scale(var(--k)); transform-origin: 100% 0; width: 300px; padding: 14px 16px 12px; border-radius: 14px;
+  max-height: calc((100% - (186px + var(--bar-extra, 0px)) * var(--k) - env(safe-area-inset-bottom, 0px)) / var(--k)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; box-sizing: border-box;
   background: var(--sf); border: 1px solid var(--ln); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 16px 40px rgba(0,0,0,.4); }
 .s3d-adjust[hidden] { display: none; }
 .s3d-adjust-h { font-size: 12px; font-weight: 600; color: var(--t2); margin-bottom: 8px; }
+/* 调整面板底部：屏幕内容与显示方式 */
+.s3d-adjust-more { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ln); }
+.s3d-adjust .s3d-select { justify-content: space-between; padding: 0; margin-top: 8px; }
+.s3d-adjust .s3d-select select { min-width: 150px; }
+.s3d-adjust .s3d-seg button { flex: 1; }
 .s3d-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--t2); margin-top: 6px; }
 .s3d-row b { color: var(--t); font-weight: 600; font-variant-numeric: tabular-nums; }
 .s3d-adjust input[type=range] { width: 100%; accent-color: var(--ac); margin: 6px 0 4px; }
@@ -235,7 +241,7 @@ body.s3d-recording .app-mode { display: none !important; }
   .s3d-row2::-webkit-scrollbar { display: none; }
   .s3d-row2 > * { flex: none; }
   .s3d-select span { display: none; }
-  .s3d-adjust { bottom: calc(112px + env(safe-area-inset-bottom, 0px)); width: calc(100% - 24px); }
+  .s3d-adjust { left: 12px; right: 12px; top: auto; bottom: calc(112px + env(safe-area-inset-bottom, 0px)); width: auto; transform: none; max-height: 52%; }
   .s3d-data { left: 8px; right: 8px; width: auto; top: auto; bottom: calc(112px + env(safe-area-inset-bottom, 0px)); max-height: 46%; padding: 10px; }
   .s3d.eyeview .s3d-data { top: auto; }
   .s3d-data-body { display: grid; grid-template-columns: 44% 1fr; gap: 10px; align-items: start; }
@@ -253,5 +259,25 @@ body.s3d-recording .app-mode { display: none !important; }
   .s3d-tl { bottom: calc(112px + env(safe-area-inset-bottom, 0px)); left: 8px; right: 8px; transform: none; max-width: none; }
   .s3d-toast { bottom: calc(112px + env(safe-area-inset-bottom, 0px)); white-space: normal; text-align: center; }
   .st-diff { gap: 2px 10px; font-size: 12px; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  /* 手机横屏：工具栏一行贴底，放不下时横向滑动；面板停靠右侧，不盖住人物和手机 */
+  .s3d-bar, .s3d-bar.two-rows { left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); bottom: calc(8px + env(safe-area-inset-bottom, 0px)); transform: none; max-width: none; width: auto;
+    flex-direction: row; flex-wrap: nowrap !important; align-items: center; justify-content: flex-start; gap: 6px; padding: 4px; border-radius: 14px; overflow-x: auto; scrollbar-width: none; }
+  .s3d-bar::-webkit-scrollbar { display: none; }
+  .s3d-row2, .s3d-bar.two-rows > .s3d-row2 { display: contents; }
+  .s3d-bar > *, .s3d-row2 > * { flex: none; }
+  .s3d-bar > [data-k="scenes"] button { flex: none; }
+  .s3d-div { display: block; }
+  .s3d-seg button { padding: 6px 9px; }
+  .s3d-btn { padding: 6px 10px; }
+  .s3d-adjust, .s3d-data { left: auto; right: max(8px, env(safe-area-inset-right, 0px)); top: 64px; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); width: 280px; max-height: none; transform: none; overflow-y: auto; }
+  .s3d-data-body { display: block; }
+  .s3d-tl, .s3d-toast { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+  .s3d-hud { left: max(12px, env(safe-area-inset-left, 0px)); top: 8px; }
+  .s3d-hero [data-k="theta"], .s3d.eyeview .s3d-hero [data-k="theta"] { font-size: 34px; }
+  .s3d-hero { margin-top: 4px; }
+  .s3d-stats { margin-top: 6px; }
+  .s3d-note { display: none; }
 }
 `;

@@ -258,7 +258,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     </div>
     <div class="s3d-inset" data-k="insetNb" data-who="nb"><div class="s3d-inset-cap"></div></div>
     <div class="s3d-inset" data-k="insetYou" data-who="you"><div class="s3d-inset-cap"></div></div>
-    <div class="s3d-adjust" data-k="adjust" hidden></div>
+    <div class="s3d-adjust" data-k="adjust" hidden><div data-k="adjustBody"></div><div class="s3d-adjust-more"><div class="s3d-adjust-h">画面</div><label class="s3d-select"><span>屏幕</span><select data-k="pattern">${PATTERNS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label><label class="s3d-select"><span>显示</span><select data-k="display"><option value="0">仿真效果</option><option value="1">原图</option><option value="2">离轴角分布</option></select></label></div></div>
     <div class="s3d-toast" data-k="toast" role="status"></div>
     <div class="s3d-tl" data-k="tl" hidden></div>
     <div class="s3d-bar">
@@ -270,8 +270,6 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       <span class="s3d-div"></span>
       <div class="s3d-seg" data-k="devices">${DEVICES.map((d) => `<button data-v="${d.id}" title="${d.name}">${d.foldable?'Duo':d.name.match(/^iPhone \d+/)?.[0] || d.name.split(' ')[0]}</button>`).join('')}</div>
       <label class="s3d-toggle" data-k="privacyRow"><input type="checkbox" data-k="privacy"><span class="s3d-sw"></span><span data-k="privacyLabel">防窥</span></label>
-      <label class="s3d-select"><span>屏幕</span><select data-k="pattern">${PATTERNS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
-      <label class="s3d-select"><span>显示</span><select data-k="display"><option value="0">仿真效果</option><option value="1">原图</option><option value="2">离轴角分布</option></select></label>
       <button class="s3d-btn" data-k="adjustBtn" aria-expanded="false">调整</button>
       <button class="s3d-btn" data-k="dataBtn" aria-expanded="false">数据</button>
       <span class="s3d-div"></span>
@@ -294,7 +292,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
     bar.classList.remove('two-rows', 'tight');
     let extra = 0;
     const over = () => bar.scrollWidth > bar.clientWidth + 1;
-    if (!matchMedia('(max-width: 980px)').matches && over()) {
+    if (!matchMedia('(max-width: 980px), (max-height: 500px)').matches && over()) {
       const h1 = bar.offsetHeight;
       bar.classList.add('two-rows');
       if (over()) bar.classList.add('tight');       // 第二行也放不下：第二行再换行
@@ -481,7 +479,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
 
   // ---------- 调整面板（观看距离 / 离轴角） ----------
   function renderAdjust() {
-    const box = $('adjust');
+    const box = $('adjustBody');
     const rows = preset.params.map((d) => `
       <label class="s3d-row"><span>${d.label}</span><b data-out="${d.key}">${params[preset.id][d.key]}${d.unit}</b></label>
       <input type="range" data-p="${d.key}" min="${d.min}" max="${d.max}" step="${d.step}" value="${params[preset.id][d.key]}">`).join('');
