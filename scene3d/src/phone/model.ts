@@ -56,7 +56,7 @@ export interface PhoneModel {
   spec: DeviceSpec;
   /** 显示区半宽 / 半高（米） */
   half: THREE.Vector2;
-  /** 外观来源：参数化建模 / 苹果官网 AR 模型（本机） */
+  /** 外观来源：参数化建模 / 苹果官网 AR 模型 */
   source: 'param' | 'apple';
   screens?: {key:'inner'|'outer';screen:PhoneModel['screen'];half:THREE.Vector2;spec:DeviceSpec['screen']}[];
   setFold?(angle:number,surface:'inner'|'outer',mix?:number):void;

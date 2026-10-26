@@ -1,5 +1,5 @@
 /*
- * iPhone 18 Pro Max 外观：用苹果官网 iPhone 18 Pro 页面的 AR 模型（USDZ → GLB，只在本机，见 README），
+ * iPhone 18 Pro Max 外观：用苹果官网 iPhone 18 Pro 页面的 AR 模型（USDZ → GLB，© Apple，来源见 CREDITS.md），
  * 等比例放大成 Pro Max：长宽按机身高 150.0 → 163.4 mm 放大，厚度不变（两款都是 8.75 mm）。
  * 模型自带的屏幕（壁纸贴图）隐藏，换成按实测数据着色的屏幕。
  * 原模型：Y 向上、单位厘米、屏幕朝 −z；这里换到手机局部坐标（x 右、y 上、z 指向屏幕外，原点在屏幕玻璃中心，单位米）。

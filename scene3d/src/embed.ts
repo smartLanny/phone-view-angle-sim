@@ -17,7 +17,7 @@ declare global {
 }
 
 /**
- * 苹果官网 AR 模型（本机）：web/local/iphone18pm-<颜色>.js，内容是 GLB 的 base64。
+ * 苹果官网 AR 模型：web/local/iphone18pm-<颜色>.js，内容是 GLB 的 base64（© Apple，见 scene3d/CREDITS.md）。
  * 这个目录不进公开仓库，线上找不到文件时返回 null，改用参数化模型。
  */
 function loadAppleIphone(variant: string, model?: string): Promise<ArrayBuffer | null> {
