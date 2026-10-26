@@ -1,14 +1,14 @@
 /* 三维场景界面样式：沿用现有网页的 CSS 变量（在独立开发页里用后备值）。 */
 export const CSS = /* css */ `
 .s3d { position: relative; overflow: hidden; background: #08090b; --k: 1;
-  --t: var(--text, #f2f3f5); --t2: var(--text-2, #a9aeb8); --mu: var(--muted, #737985);
+  --t: var(--text, #f2f3f5); --t2: var(--text-2, #a9aeb8); --mu: var(--muted, #8b919c);
   --sf: var(--surface, rgba(19,20,23,.84)); --ln: var(--line, rgba(255,255,255,.075)); --ln2: var(--line-2, rgba(255,255,255,.14));
-  --ac: #4aa3ff; font-family: var(--font, system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif); color: var(--t); }
+  --ac: #3987e5; font-family: var(--font, system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif); color: var(--t); }
 .s3d-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 .s3d-ui { position: absolute; inset: 0; pointer-events: none; }
 .s3d-ui > * { pointer-events: auto; }
 
-.s3d-hud { position: absolute; left: calc(24px * var(--k)); top: calc(20px * var(--k)); transform: scale(var(--k)); transform-origin: 0 0; pointer-events: none; max-width: 380px; text-shadow: 0 1px 10px rgba(0,0,0,.65), 0 0 2px rgba(0,0,0,.5); }
+.s3d-hud { position: absolute; left: max(calc(24px * var(--k)), env(safe-area-inset-left, 0px)); top: max(calc(20px * var(--k)), env(safe-area-inset-top, 0px)); transform: scale(var(--k)); transform-origin: 0 0; pointer-events: none; max-width: 380px; text-shadow: 0 1px 10px rgba(0,0,0,.65), 0 0 2px rgba(0,0,0,.5); }
 /* 人眼视角：屏幕为主，文字少而大 */
 .s3d.eyeview .s3d-scene { font-size: 18px; color: var(--t); }
 .s3d.eyeview .s3d-hero [data-k="theta"] { font-size: 56px; }
@@ -29,7 +29,7 @@ export const CSS = /* css */ `
 .s3d-stats b { font-weight: 600; font-variant-numeric: tabular-nums; margin-right: 3px; }
 .s3d-note { margin-top: 10px; font-size: 12px; color: var(--mu); line-height: 1.5; }
 
-.s3d-bar { position: absolute; left: 50%; bottom: calc(22px * var(--k)); transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 100%; display: flex; align-items: center; gap: 10px;
+.s3d-bar { position: absolute; left: 50%; bottom: calc(22px * var(--k) + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 100%; display: flex; align-items: center; gap: 10px;
   padding: 6px; border-radius: 16px; background: var(--sf); border: 1px solid var(--ln);
   -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 16px 40px rgba(0,0,0,.4); max-width: calc((100% - 24px) / var(--k)); }
 .s3d-row2 { display: contents; }
@@ -40,10 +40,10 @@ export const CSS = /* css */ `
 /* 第二行还放不下（窄一些的屏幕）：工具栏占满可用宽度，第二行再换行 */
 .s3d-bar.two-rows.tight { width: calc((100% - 24px) / var(--k)); box-sizing: border-box; }
 .s3d-bar.two-rows.tight > .s3d-row2 { flex-wrap: wrap; }
-.s3d-seg { display: flex; gap: 2px; }
-.s3d-seg button { margin: 0; box-shadow: none; font: inherit; font-size: 13px; color: var(--t2); background: transparent; border: 0; border-radius: 10px; padding: 8px 12px; cursor: pointer; white-space: nowrap; }
-.s3d-seg button:hover:not(:disabled) { color: var(--t); background: rgba(255,255,255,.05); }
-.s3d-seg button.on { color: var(--t); background: rgba(255,255,255,.14); }
+.s3d-seg { display: flex; gap: 2px; padding: 3px; border-radius: 11px; background: rgba(0,0,0,.28); border: 1px solid var(--ln); }
+.s3d-seg button { margin: 0; box-shadow: none; font: inherit; font-size: 13px; color: var(--t2); background: transparent; border: 0; border-radius: 8px; padding: 8px 12px; cursor: pointer; white-space: nowrap; }
+.s3d-seg button:hover:not(:disabled):not(.on) { color: var(--t); background: rgba(255,255,255,.04); }
+.s3d-seg button.on { color: #f2f3f5; background: rgba(255,255,255,.15); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
 .s3d-seg button:disabled { opacity: .35; cursor: default; }
 .s3d-div { width: 1px; height: 22px; background: var(--ln2); }
 .s3d-select { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--t2); padding: 0 6px; white-space: nowrap; }
@@ -56,14 +56,14 @@ export const CSS = /* css */ `
 .s3d-btn:hover, .s3d-btn.on { color: var(--t); background: rgba(255,255,255,.14); }
 .s3d-toggle { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--t2); cursor: pointer; white-space: nowrap; padding: 0 4px; }
 .s3d-toggle input { position: absolute; opacity: 0; pointer-events: none; }
-.s3d-sw { position: relative; width: 34px; height: 20px; border-radius: 10px; background: rgba(255,255,255,.16); transition: background .2s; flex: none; }
-.s3d-sw::after { content: ""; position: absolute; left: 3px; top: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.s3d-sw { position: relative; width: 44px; height: 26px; border-radius: 13px; background: rgba(255,255,255,.16); transition: background .2s; flex: none; }
+.s3d-sw::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .2s; }
 .s3d-toggle input:checked + .s3d-sw { background: var(--ac); }
-.s3d-toggle input:checked + .s3d-sw::after { transform: translateX(14px); }
+.s3d-toggle input:checked + .s3d-sw::after { transform: translateX(18px); }
 .s3d-toggle input:focus-visible + .s3d-sw { outline: 2px solid var(--ac); outline-offset: 2px; }
 
 /* 调整面板 */
-.s3d-adjust { position: absolute; left: 50%; bottom: calc((84px + var(--bar-extra, 0px)) * var(--k)); transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 100%; width: 300px; padding: 14px 16px 12px; border-radius: 14px;
+.s3d-adjust { position: absolute; left: 50%; bottom: calc((84px + var(--bar-extra, 0px)) * var(--k) + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 100%; width: 300px; padding: 14px 16px 12px; border-radius: 14px;
   background: var(--sf); border: 1px solid var(--ln); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 16px 40px rgba(0,0,0,.4); }
 .s3d-adjust[hidden] { display: none; }
 .s3d-adjust-h { font-size: 12px; font-weight: 600; color: var(--t2); margin-bottom: 8px; }
@@ -94,19 +94,19 @@ export const CSS = /* css */ `
 .s3d-pad-read b { color: var(--t); font-weight: 600; }
 .s3d-pad-scale { max-width: calc(200px * var(--k)); margin: 6px auto 0; }
 .s3d-ramp { height: calc(6px * var(--k)); border-radius: 3px; }
-.s3d-ramp-ticks { display: flex; justify-content: space-between; color: var(--mu); font-size: calc(11px * var(--k)); margin-top: 3px; }
+.s3d-ramp-ticks { display: flex; justify-content: space-between; color: var(--mu); font-size: calc(12px * var(--k)); margin-top: 3px; }
 .s3d-curve-col { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--ln); }
 .s3d-curve-h { font-size: calc(12px * var(--k)); color: var(--mu); margin-bottom: 6px; }
-.s3d-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: calc(11.5px * var(--k)); color: var(--mu); margin-bottom: 6px; }
+.s3d-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: calc(12px * var(--k)); color: var(--mu); margin-bottom: 6px; }
 .s3d-legend:empty { display: none; }
 .s3d-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .s3d-legend span.on { color: var(--t); }
 .s3d-legend i { width: calc(14px * var(--k)); height: calc(2px * var(--k)); border-radius: 1px; }
 .s3d-charts svg { display: block; width: 100%; overflow: visible; }
 .s3d-charts svg + svg { margin-top: 6px; }
-.s3d-charts .ch-title { fill: var(--t2); font-size: calc(11.5px * var(--k)); }
-.s3d-charts .ch-val { fill: var(--t); font-size: calc(11.5px * var(--k)); font-weight: 600; }
-.s3d-charts .ch-tick { fill: var(--mu); font-size: calc(10.5px * var(--k)); }
+.s3d-charts .ch-title { fill: var(--t2); font-size: calc(12px * var(--k)); }
+.s3d-charts .ch-val { fill: var(--t); font-size: calc(12px * var(--k)); font-weight: 600; }
+.s3d-charts .ch-tick { fill: var(--mu); font-size: calc(12px * var(--k)); }
 .s3d-charts .ch-grid { stroke: rgba(255,255,255,.07); }
 .s3d-charts .ch-base { stroke: rgba(255,255,255,.18); }
 .s3d-charts .ch-cursor { stroke: rgba(255,255,255,.55); }
@@ -181,7 +181,7 @@ export const CSS = /* css */ `
 .s3d.eyeview .s3d-axis { opacity: .45; }
 .s3d-tl:not([hidden]) ~ .s3d-bar [data-k="privacyRow"] { cursor: grab; }
 .s3d-bar label.tl-src { opacity: .35; }
-.s3d-tl { position: absolute; left: 50%; bottom: calc((84px + var(--bar-extra, 0px)) * var(--k)); transform: translateX(-50%); max-width: calc(100% - 24px); box-sizing: border-box;
+.s3d-tl { position: absolute; left: 50%; bottom: calc((84px + var(--bar-extra, 0px)) * var(--k) + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); max-width: calc(100% - 24px); box-sizing: border-box;
   font-size: calc(13px * var(--k)); padding: .75em .8em .55em; border-radius: 1em; background: var(--sf); border: 1px solid var(--ln);
   -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 16px 40px rgba(0,0,0,.4); }
 .s3d-tl[hidden] { display: none; }
@@ -196,17 +196,17 @@ export const CSS = /* css */ `
 .tl-chip.tl-src, .s3d-bar button.tl-src { opacity: .35; }
 .tl-chip.tl-lift, .s3d-bar button.tl-lift { background: rgba(255,255,255,.22); }
 .tl-empty { color: var(--mu); padding: .4em .2em; }
-.tl-foot { display: flex; justify-content: space-between; align-items: center; gap: 1em; margin-top: .55em; font-size: .85em; color: var(--mu); }
+.tl-foot { display: flex; justify-content: space-between; align-items: center; gap: 1em; margin-top: .55em; font-size: calc(12px * var(--k)); color: var(--mu); }
 .tl-foot .s3d-link { padding: 0; font-size: 1em; }
 .tl-mark { position: absolute; display: none; width: calc(3px * var(--k)); margin-left: calc(-1.5px * var(--k)); background: var(--ac); border-radius: 2px; pointer-events: none; }
 .tl-ghost { position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none; white-space: nowrap;
   margin: calc(-14px * var(--s3d-k, 1)) 0 0 calc(-16px * var(--s3d-k, 1)); padding: .35em .75em; border-radius: .6em;
-  font: 600 calc(13px * var(--s3d-k, 1)) / 1.3 system-ui, -apple-system, "PingFang SC", sans-serif; color: #fff; background: #4aa3ff; box-shadow: 0 8px 22px rgba(0,0,0,.45); }
+  font: 600 calc(13px * var(--s3d-k, 1)) / 1.3 system-ui, -apple-system, "PingFang SC", sans-serif; color: #fff; background: #3987e5; box-shadow: 0 8px 22px rgba(0,0,0,.45); }
 .tl-ghost.remove { background: #c94c4c; text-decoration: line-through; }
 .s3d-play.on { color: #fff; background: var(--ac); border-color: transparent; }
 .s3d-btn:disabled { opacity: .35; cursor: default; }
 /* 提示条（播放 / 导出的状态） */
-.s3d-toast { position: absolute; left: 50%; bottom: calc((86px + var(--bar-extra, 0px)) * var(--k)); transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 100%;
+.s3d-toast { position: absolute; left: 50%; bottom: calc((86px + var(--bar-extra, 0px)) * var(--k) + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) scale(var(--k)); transform-origin: 50% 100%;
   padding: 8px 14px; border-radius: 10px; font-size: 13px; color: var(--t); background: rgba(14,15,18,.86); border: 1px solid var(--ln2);
   -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); opacity: 0; pointer-events: none !important; transition: opacity .25s; white-space: nowrap; max-width: calc((100% - 24px) / var(--k)); }
 .s3d-toast.show { opacity: 1; }
@@ -235,23 +235,23 @@ body.s3d-recording .app-mode { display: none !important; }
   .s3d-row2::-webkit-scrollbar { display: none; }
   .s3d-row2 > * { flex: none; }
   .s3d-select span { display: none; }
-  .s3d-adjust { bottom: 112px; width: calc(100% - 24px); }
-  .s3d-data { left: 8px; right: 8px; width: auto; top: auto; bottom: 112px; max-height: 46%; padding: 10px; }
+  .s3d-adjust { bottom: calc(112px + env(safe-area-inset-bottom, 0px)); width: calc(100% - 24px); }
+  .s3d-data { left: 8px; right: 8px; width: auto; top: auto; bottom: calc(112px + env(safe-area-inset-bottom, 0px)); max-height: 46%; padding: 10px; }
   .s3d.eyeview .s3d-data { top: auto; }
   .s3d-data-body { display: grid; grid-template-columns: 44% 1fr; gap: 10px; align-items: start; }
   .s3d-curve-col { margin-top: 0; padding-top: 0; border-top: 0; }
   .s3d.eyeview .s3d-hero [data-k="theta"] { font-size: 40px; }
   .s3d.eyeview .s3d-scene { font-size: 15px; }
   .s3d.eyeview .s3d-stats { font-size: 15px; gap: 14px; }
-  .s3d-inset-cap, .s3d.eyeview .s3d-inset-cap { font-size: 11.5px; white-space: nowrap; flex-direction: column; gap: 0; }
-  .s3d-hud { left: 14px; top: 12px; }
+  .s3d-inset-cap, .s3d.eyeview .s3d-inset-cap { font-size: 12px; white-space: nowrap; flex-direction: column; gap: 0; }
+  .s3d-hud { left: max(14px, env(safe-area-inset-left, 0px)); top: max(12px, env(safe-area-inset-top, 0px)); }
   .s3d-hero [data-k="theta"] { font-size: 34px; }
   .s3d-note { display: none; }
-  .s3d-bar { bottom: 10px; border-radius: 14px; }
+  .s3d-bar { bottom: calc(10px + env(safe-area-inset-bottom, 0px)); border-radius: 14px; }
   .s3d-div { display: none; }
   .s3d-seg button { padding: 7px 9px; }
-  .s3d-tl { bottom: 112px; left: 8px; right: 8px; transform: none; max-width: none; }
-  .s3d-toast { bottom: 112px; white-space: normal; text-align: center; }
+  .s3d-tl { bottom: calc(112px + env(safe-area-inset-bottom, 0px)); left: 8px; right: 8px; transform: none; max-width: none; }
+  .s3d-toast { bottom: calc(112px + env(safe-area-inset-bottom, 0px)); white-space: normal; text-align: center; }
   .st-diff { gap: 2px 10px; font-size: 12px; }
 }
 `;

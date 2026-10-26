@@ -606,7 +606,10 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
   window.addEventListener('keydown', (e) => {
     if (!active || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) return;
     const k = e.key.toLowerCase();
-    if (k === 'h') host.classList.toggle('clean');
+    if (k === 'h') {
+      host.classList.toggle('clean');
+      document.body.classList.toggle('s3d-clean', host.classList.contains('clean'));   // 录屏时宿主页面据此隐藏模式切换
+    }
     else if (/^[1-9]$/.test(k) && PRESETS[+k - 1]) goto(PRESETS[+k - 1]);
     else if (k === ' ') { if (player.playing) player.stop(); else void player.play(steps()); }
     else if (k === 'v') {
