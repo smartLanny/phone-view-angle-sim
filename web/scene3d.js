@@ -5050,7 +5050,7 @@ body.s3d-recording .app-mode { display: none !important; }
       ${k.foldable?`<div class="s3d-row"><span>观察屏幕</span></div><div class="s3d-seg"><button data-surface="inner" class="${j===`inner`?`on`:``}">内屏</button><button data-surface="outer" class="${j===`outer`?`on`:``}">外屏</button></div>
       <label class="s3d-row"><span>折叠角度</span><b data-out="fold">${Math.round(A)}°</b></label><input type="range" data-ui="fold" min="0" max="180" step="1" value="${Math.round(A)}"><div class="s3d-seg"><button data-fold="0">闭合</button><button data-fold="90">半开</button><button data-fold="180">展开</button></div>`:``}
       <div class="s3d-row"><span>机身颜色 · ${k.name}</span></div><div class="s3d-swatches">${a}</div>
-      ${k.model?``:`<div class="s3d-derived">外观：${F.source===`apple`?`苹果官网 AR 模型（iPhone 18 Pro 等比放大，仅本机）`:`按官方尺寸参数化建模`}</div>`}
+      ${k.model?``:`<div class="s3d-derived">外观：${F.source===`apple`?`苹果官网 AR 模型（iPhone 18 Pro 等比放大）`:`按官方尺寸参数化建模`}</div>`}
       <label class="s3d-row"><span>播放时每个画面停留</span><b data-out="hold">${i} 秒</b></label>
       <input type="range" data-ui="hold" min="1" max="8" step="0.5" value="${i}">
       <label class="s3d-row"><span>界面与标注大小</span><b data-out="uiScale">${Math.round(r*100)}%</b></label>
