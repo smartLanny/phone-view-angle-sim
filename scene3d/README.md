@@ -82,16 +82,18 @@ iPhone 18 Pro Max：
 |---|---|---|
 | 机身 | 163.4 × 78.0 × 8.75 mm；含相机平台 11.54 mm、含镜头 13.77 mm | 官方技术规格 |
 | 屏幕 | 6.9″（标准矩形 6.86″），2868 × 1320 @460ppi | 官方技术规格 |
-| 外观 | 苹果官网 iPhone 18 Pro 页面的 AR 模型 `iphone-18-pro-e-sim.usdz`，长宽按机身高 150.0 → 163.4 mm 等比放大，厚度不变（两款都是 8.75 mm）；四种颜色各一份；原模型的屏幕隐藏，换成实测数据着色的屏幕；显示区与灵动岛按原模型量取再放大 | 苹果官网 |
-| 外观（没有官方模型文件时） | 参数化建模：阳极氧化铝一体机身（磨砂金属）、相机平台（两侧各缩进约 2.4 mm、高约 46 mm、底部一圈深色接缝）、三摄（两颗竖排在一侧、第三颗靠近中线，镜头外圈与机身同色、内有镜筒与镜片）、闪光灯、麦克风、LiDAR、几乎占满背面下部的玻璃窗（酒红 / 黑为深色，银 / 冰川与机身相近）、中框天线条、按键。平台与部件的位置、圆角、颜色为**估计**，按官方产品外观的比例量取 | 官方尺寸 + 估计 |
+| 外观 | 苹果官网 iPhone 18 Pro 页面的 AR 模型 `iphone-18-pro-e-sim.usdz`，长宽按官方尺寸放大（原模型机身 149.96 × 71.78 mm → 163.4 × 78.0 mm，约 ×1.09），厚度不变（两款都是 8.75 mm）；四种颜色是同一模型的材质变体；原模型的屏幕去掉，换成实测数据着色的屏幕 | 苹果官网 |
+| 显示区与灵动岛 | 显示区按官方对角线与分辨率（72.85 × 158.28 mm），等效圆角 10.3 mm 与原模型一致（原模型为连续曲率圆角，对角线方向离两边 3.03 mm）；灵动岛按原模型量取、不放大（前摄模组 Pro 与 Pro Max 相同）：15.67 × 6.07 mm，中心距显示区顶边 5.35 mm | 苹果官网模型 + 官方规格 |
+| 参数化机身（只用于尺寸） | 外观由模型给出；这组参数只用来算手持位置、相机凸起和屏幕外轮廓。原先没有模型时的参数化外观：阳极氧化铝一体机身（磨砂金属）、相机平台（两侧各缩进约 2.4 mm、高约 46 mm、底部一圈深色接缝）、三摄（两颗竖排在一侧、第三颗靠近中线，镜头外圈与机身同色、内有镜筒与镜片）、闪光灯、麦克风、LiDAR、几乎占满背面下部的玻璃窗（酒红 / 黑为深色，银 / 冰川与机身相近）、中框天线条、按键。平台与部件的位置、圆角、颜色为**估计**，按官方产品外观的比例量取 | 官方尺寸 + 估计 |
 
 ### 苹果官网模型
 
 模型版权归 Apple Inc.；本项目配合 Apple 宣传，经确认可随公开仓库与网页发布，来源与说明见 `CREDITS.md`。
 
-- 转换流程：`usdz` → 用 `usd-core`（Pixar USD）按颜色变体展平、去掉 AR 场景里的第二台手机 → `usd2gltf` 转 GLB（`public/local/phone_<颜色>.glb`，开发页用）→ `npm run build:web` 时由 `tools/embed-apple.mjs` 写成 `web/local/iphone18pm-<颜色>.js`（base64 内嵌，双击打开也能用）。
-- 这两个目录已不再忽略，转换结果可以直接提交；GitHub Pages 上有这些文件时网页用官方模型，没有时自动改用参数化模型。
-- 重新生成：把 usdz 放到 `public/local/`，按 README 末尾“附：苹果模型转换”的命令操作。
+- 转换：`tools/convert-iphone18-usdz.py`（只依赖 NumPy、Pillow；用 `tools/usdc_reader.py` 直接读 USDC，不需要 USD 库）→ `public/models/iphone18pm.glb` → `node tools/embed-phone18.mjs`（`npm run build:web` 也会做）写成 `web/assets/iphone18pm.js`（base64 内嵌，双击打开也能用）。屏幕仿真页和三维场景共用这一份。
+- 转换内容：按 USD 的组合规则取值（顶层本地意见 → 颜色变体 → payload）；只取 AR 场景里的第一台手机，去掉屏幕网格；四种颜色（酒红 Burgundy / 冰川 Glacier / 银 Silver / 黑 Black）写成 `KHR_materials_variants`，三维场景加载前按所选颜色改写材质（three.js 不认这个扩展）；UsdPreviewSurface → glTF：底色 / 法线 / 环境光遮蔽贴图原样使用并按原 UV 组挂接，单通道的粗糙度、金属度贴图无损打包进 G / B 通道，清漆、透明度照原值。
+- 核对：93 个网格的顶点与原文件逐点对应（误差 < 0.0001 mm，已含缩放），三角形数一致；四种颜色下每个网格的底色、金属度、粗糙度、透明度、清漆与原材质逐项一致，底色 / 法线 / 遮蔽贴图逐像素一致，打包的粗糙度 / 金属度通道无损。
+- 重新生成：见本文末尾“附：苹果模型转换”。
 
 ## 人物
 
@@ -117,7 +119,7 @@ Quaternius Universal Base Characters（CC0）免费版的男性模型，自带�
 ## 进度
 
 - [x] 风格（A 暗场冷光）、中性男性人台
-- [x] 小米 18 Pro Max 外观；iPhone 18 Pro Max 外观（有官方模型文件时用苹果官网模型，否则用参数化模型）、机型切换、机身颜色
+- [x] 小米 18 Pro Max 外观；iPhone 18 Pro Max 外观（苹果官网 iPhone 18 Pro 模型按官方尺寸放大，四种颜色）、机型切换、机身颜色
 - [x] 五个场景：正视、正常手持、放在桌上（手机按背面凸起略微翘起）、地铁旁座（小窗对比、防窥开关、你 / 旁人视角）、侧卧（左右眼小窗对比）
 - [x] 讲解视角 ↔ 人眼视角平滑过渡；场景之间平滑过渡；切换后人物自动淡化
 - [x] 观看距离 / 离轴角滑块（“调整”面板），手臂够不到时人物淡化
@@ -135,9 +137,8 @@ Quaternius Universal Base Characters（CC0）免费版的男性模型，自带�
 ## 附：苹果模型转换
 
 ```bash
-python3 -m venv --without-pip /tmp/usdenv && curl -sSL https://bootstrap.pypa.io/get-pip.py | /tmp/usdenv/bin/python
-/tmp/usdenv/bin/pip install usd-core usd2gltf
-# 解包 usdz → 对 Burgundy / Glacier / Silver / Black 分别：设置根节点的 Color 变体、停用第二台手机
-# （/KvFiGLnoDCgrTiu/xYOCLbDjKmKlJoU/wUOhcMgiBmCgGaw）、Flatten 导出 usdc → usd2gltf -i x.usdc -o public/local/phone_<颜色>.glb
-npm run build:web
+# iPhone 18 Pro Max：从官网 iPhone 18 Pro 页面下载 iphone-18-pro-e-sim.usdz（不进仓库）
+python3 tools/convert-iphone18-usdz.py /path/to/iphone-18-pro-e-sim.usdz public/models/iphone18pm.glb
+node tools/embed-phone18.mjs
+# 结束时打印量出的显示区、等效圆角、灵动岛尺寸（填进 src/phone/devices.ts 与 web/devices.js）
 ```
