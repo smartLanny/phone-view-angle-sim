@@ -491,7 +491,7 @@ export async function mount(host: HTMLElement, opts: MountOptions) {
       ${device.foldable?`<div class="s3d-row"><span>观察屏幕</span></div><div class="s3d-seg"><button data-surface="inner" class="${duoSurface==='inner'?'on':''}">内屏</button><button data-surface="outer" class="${duoSurface==='outer'?'on':''}">外屏</button></div>
       <label class="s3d-row"><span>折叠角度</span><b data-out="fold">${Math.round(fold)}°</b></label><input type="range" data-ui="fold" min="0" max="180" step="1" value="${Math.round(fold)}"><div class="s3d-seg"><button data-fold="0">闭合</button><button data-fold="90">半开</button><button data-fold="180">展开</button></div>`:''}
       <div class="s3d-row"><span>机身颜色 · ${device.name}</span></div><div class="s3d-swatches">${sw}</div>
-      ${device.modelNote ? `<div class="s3d-derived">外观：${device.modelNote}</div>` : device.model ? '' : '<div class="s3d-derived">外观：按官方尺寸参数化建模</div>'}
+      ${device.model ? '' : '<div class="s3d-derived">外观：按官方尺寸参数化建模</div>'}
       <label class="s3d-row"><span>播放时每个画面停留</span><b data-out="hold">${hold} 秒</b></label>
       <input type="range" data-ui="hold" min="1" max="8" step="0.5" value="${hold}">
       <label class="s3d-row"><span>界面与标注大小</span><b data-out="uiScale">${Math.round(userScale * 100)}%</b></label>

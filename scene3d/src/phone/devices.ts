@@ -20,8 +20,6 @@ export interface DeviceSpec {
   dataDevice: string;
   /** 机身模型（public/models/<model>.glb，苹果官网 AR 模型转换，见 CREDITS.md）；没有就参数化建模 */
   model?: string;
-  /** 调整面板里“外观”一行的说明（模型不是该机型原样时写明） */
-  modelNote?: string;
   foldable?: boolean;
   body: BodySpec;
   screen: {
@@ -81,7 +79,6 @@ export const IPHONE_18_PRO_MAX: DeviceSpec = {
   // 机身用苹果官网 iPhone 18 Pro 的 AR 模型，长宽按官方尺寸放大成 Pro Max、厚度不变（tools/convert-iphone18-usdz.py）。
   // 下面的参数化机身只用来给出尺寸（手持位置、相机凸起）和屏幕外轮廓。
   model: 'iphone18pm',
-  modelNote: '苹果官网 AR 模型（iPhone 18 Pro 按官方尺寸放大）',
   body: {
     // 官方：163.4 × 78.0 × 8.75 mm；含相机平台 11.54 mm、含镜头 13.77 mm
     W: 78.0, H: 163.4, T: 8.75,
