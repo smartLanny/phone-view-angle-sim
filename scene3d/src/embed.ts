@@ -10,33 +10,9 @@ declare global {
     ANG_DATA: MountOptions['data'];
     DUO_DATA?:MountOptions['duoData'];
     SCENE3D_PERSON: object;
-    SCENE3D_IPHONE?: Record<string, string>;
     Phone3D: { loadModel: (id: string) => Promise<ArrayBuffer> };
     Scene3D: { mount: (host: HTMLElement, extra?: Partial<MountOptions>) => ReturnType<typeof mount> };
   }
-}
-
-/**
- * 苹果官网 AR 模型：web/local/iphone18pm-<颜色>.js，内容是 GLB 的 base64（© Apple，见 scene3d/CREDITS.md）。
- * 这个目录不进公开仓库，线上找不到文件时返回 null，改用参数化模型。
- */
-function loadAppleIphone(variant: string, model?: string): Promise<ArrayBuffer | null> {
-  if (model) return window.Phone3D.loadModel(model);
-  const decode = (b64: string) => {
-    const bin = atob(b64.slice(b64.indexOf(',') + 1));
-    const u8 = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-    return u8.buffer;
-  };
-  const have = () => window.SCENE3D_IPHONE?.[variant];
-  if (have()) return Promise.resolve(decode(have()!));
-  return new Promise((resolve) => {
-    const s = document.createElement('script');
-    s.src = `local/iphone18pm-${variant}.js`;
-    s.onload = () => resolve(have() ? decode(have()!) : null);
-    s.onerror = () => resolve(null);
-    document.head.appendChild(s);
-  });
 }
 
 window.Scene3D = {
@@ -45,7 +21,8 @@ window.Scene3D = {
     duoData:window.DUO_DATA,
     person: window.SCENE3D_PERSON,
     makePattern: (n, w, h, layout) => window.Patterns.make(n, w, h, layout),
-    appleIphone: loadAppleIphone,
+    // 机身模型（苹果官网 AR 模型转换，© Apple，见 scene3d/CREDITS.md）和屏幕仿真页共用 phone3d.js 加载的那一份
+    appleIphone: (model) => window.Phone3D.loadModel(model),
     ...extra,
   }),
 };

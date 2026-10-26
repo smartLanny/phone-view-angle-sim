@@ -9,6 +9,8 @@ export interface ColorWay {
   ring?: string;
   /** 背面玻璃窗的金属感（磨砂玻璃带一点金属光泽） */
   backMetal?: number;
+  /** 机身模型里对应的颜色变体名（KHR_materials_variants） */
+  variant?: string;
 }
 
 export interface DeviceSpec {
@@ -16,7 +18,10 @@ export interface DeviceSpec {
   name: string;
   /** data.js 里对应的机型名前缀 */
   dataDevice: string;
+  /** 机身模型（public/models/<model>.glb，苹果官网 AR 模型转换，见 CREDITS.md）；没有就参数化建模 */
   model?: string;
+  /** 调整面板里“外观”一行的说明（模型不是该机型原样时写明） */
+  modelNote?: string;
   foldable?: boolean;
   body: BodySpec;
   screen: {
@@ -73,6 +78,10 @@ export const IPHONE_18_PRO_MAX: DeviceSpec = {
   id: 'iphone18pm',
   name: 'iPhone 18 Pro Max',
   dataDevice: 'iPhone 18 Pro Max',
+  // 机身用苹果官网 iPhone 18 Pro 的 AR 模型，长宽按官方尺寸放大成 Pro Max、厚度不变（tools/convert-iphone18-usdz.py）。
+  // 下面的参数化机身只用来给出尺寸（手持位置、相机凸起）和屏幕外轮廓。
+  model: 'iphone18pm',
+  modelNote: '苹果官网 AR 模型（iPhone 18 Pro 按官方尺寸放大）',
   body: {
     // 官方：163.4 × 78.0 × 8.75 mm；含相机平台 11.54 mm、含镜头 13.77 mm
     W: 78.0, H: 163.4, T: 8.75,
@@ -98,14 +107,16 @@ export const IPHONE_18_PRO_MAX: DeviceSpec = {
     buttonThick: 2.4, buttonOut: 0.5,
     bands: [[17, 0.9], [-17, 0.9]],
   },
-  // 6.9″（标准矩形 6.86″），2868 × 1320 @460ppi；灵动岛宽约 14 mm
-  screen: { diag: 6.86, resW: 1320, resH: 2868, corner: 10.3, cutout: { y: 4.9, half: 4.0, r: 3.05 } },
-  // 阳极氧化铝：金属感强、磨砂；背面玻璃窗颜色比机身深（酒红 / 黑）或接近（银 / 冰川）
+  // 6.9″（标准矩形 6.86″），2868 × 1320 @460ppi；显示区按官方对角线与分辨率，等效圆角与原模型一致。
+  // 灵动岛按原模型量取、不放大（前摄模组 Pro 与 Pro Max 相同）：15.67 × 6.07 mm，中心距显示区顶边 5.35 mm
+  screen: { diag: 6.86, resW: 1320, resH: 2868, corner: 10.3, half: [36.425, 79.142], cutout: { y: 5.352, half: 4.799, r: 3.035 } },
+  // 阳极氧化铝：金属感强、磨砂；背面玻璃窗颜色比机身深（酒红 / 黑）或接近（银 / 冰川）。
+  // 有模型时机身按模型自带的颜色变体着色，下面的颜色只用于色块
   colors: [
-    { id: 'burgundy', name: '酒红色', swatch: '#6b3d45', frame: '#5e3a40', back: '#2c171b', backRough: 0.42, backMetal: 0.3, ring: '#54393e' },
-    { id: 'glacier', name: '冰川色', swatch: '#a7bad6', frame: '#95a8c4', back: '#abbee4', backRough: 0.42, backMetal: 0.4, ring: '#c5d5fa' },
-    { id: 'silver', name: '银色', swatch: '#dcdcda', frame: '#d3d4d2', back: '#d8d9d7', backRough: 0.42, backMetal: 0.5, ring: '#eeeeec' },
-    { id: 'black', name: '黑色', swatch: '#3a3a3b', frame: '#3f3e3e', back: '#141414', backRough: 0.42, backMetal: 0.3, ring: '#2e2d2d' },
+    { id: 'burgundy', name: '酒红色', variant: 'Burgundy', swatch: '#6b3d45', frame: '#5e3a40', back: '#2c171b', backRough: 0.42, backMetal: 0.3, ring: '#54393e' },
+    { id: 'glacier', name: '冰川色', variant: 'Glacier', swatch: '#a7bad6', frame: '#95a8c4', back: '#abbee4', backRough: 0.42, backMetal: 0.4, ring: '#c5d5fa' },
+    { id: 'silver', name: '银色', variant: 'Silver', swatch: '#dcdcda', frame: '#d3d4d2', back: '#d8d9d7', backRough: 0.42, backMetal: 0.5, ring: '#eeeeec' },
+    { id: 'black', name: '黑色', variant: 'Black', swatch: '#3a3a3b', frame: '#3f3e3e', back: '#141414', backRough: 0.42, backMetal: 0.3, ring: '#2e2d2d' },
   ],
   rearDisplay: false,
   finish: { metalness: 0.75, roughness: 0.56, clearcoat: 0 },

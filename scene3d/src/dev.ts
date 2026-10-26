@@ -20,9 +20,9 @@ const app = await mount(host, {
   device: q.get('device') || undefined,
   duoData,
   fold:q.has('fold')?+q.get('fold')!:180,duoSurface:q.get('surface')==='outer'?'outer':'inner',
-  // 苹果官网模型（public/local/，© Apple，见 CREDITS.md）；没有就用参数化模型
-  appleIphone: q.get('apple') === '0' ? undefined : async (v, model) => {
-    const r = await fetch(model ? `./models/${model}.glb` : `./local/phone_${v}.glb`);
+  // 机身模型（public/models/，苹果官网 AR 模型转换，© Apple，见 CREDITS.md）
+  appleIphone: async (model) => {
+    const r = await fetch(`./models/${model}.glb`);
     return r.ok ? r.arrayBuffer() : null;
   },
   data,
