@@ -40,12 +40,13 @@
 
   /**
    * banded: 按等值线分级显示（每一级一个颜色）；grid: 网格线用深色还是浅色；
-   * flipAngle: 离轴角分布里是否反向（单色蓝让 0° 为浅色）。
+   * flipAngle: 离轴角分布里是否反向。全部配色都为 true：方向盘上亮度高的一端（暖色 / 浅色）
+   * 在离轴角图里同样对应正对（0°），两张图同一端都表示“好”，离轴越大越冷、越暗。
    */
   const PALETTES = {
-    jet: { label: '仪器彩虹', fn: JET, banded: false, grid: 'dark', flipAngle: false },
-    band: { label: '分级色带', fn: JET, banded: true, grid: 'dark', flipAngle: false },
-    turbo: { label: 'Turbo', fn: TURBO, banded: false, grid: 'dark', flipAngle: false },
+    jet: { label: '仪器彩虹', fn: JET, banded: false, grid: 'dark', flipAngle: true },
+    band: { label: '分级色带', fn: JET, banded: true, grid: 'dark', flipAngle: true },
+    turbo: { label: 'Turbo', fn: TURBO, banded: false, grid: 'dark', flipAngle: true },
     mono: { label: '单色蓝', fn: MONO, banded: false, grid: 'light', flipAngle: true },
   };
   const palette = (name) => PALETTES[name] || PALETTES.jet;
@@ -212,16 +213,18 @@
       g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 1;
       g.beginPath(); g.arc(G.cx, G.cy, G.R + 0.5, 0, Math.PI * 2); g.stroke();
 
-      // 刻度文字（带暗色描边保证在任何底色上可读）
-      g.font = '500 10.5px system-ui, sans-serif';
-      g.textAlign = 'left'; g.textBaseline = 'bottom';
-      g.lineJoin = 'round';
+      // 环数字（30°、60°）：放在环线内侧，不压在环线上；衬一块暗底保证在任何配色上可读
+      g.font = '500 11px system-ui, sans-serif';
+      g.textAlign = 'left'; g.textBaseline = 'top';
       for (const t of [30, 60]) {
-        const y = G.cy - (t / maxT) * G.R - 1;
-        g.strokeStyle = 'rgba(8,9,12,.8)'; g.lineWidth = 3; g.strokeText(t + '°', G.cx + 3, y);
-        g.fillStyle = 'rgba(255,255,255,.85)'; g.fillText(t + '°', G.cx + 3, y);
+        const label = t + '°', x = G.cx + 4, y = G.cy - (t / maxT) * G.R + 4;
+        g.fillStyle = 'rgba(8,9,12,.6)';
+        g.fillRect(x - 3, y - 2, g.measureText(label).width + 6, 15);
+        g.fillStyle = 'rgba(255,255,255,.9)'; g.fillText(label, x, y);
       }
-      g.fillStyle = '#737985';
+      // 方位字（上下左右）
+      g.font = '500 12px system-ui, sans-serif';
+      g.fillStyle = '#a9aeb8';
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText('右', G.cx + G.R + M / 2, G.cy);
       g.fillText('左', G.cx - G.R - M / 2, G.cy);
@@ -321,10 +324,14 @@
         s += `<text class="ch-tick" x="${PL - 6}" y="${Y(v) + 3.5}" text-anchor="end">${v}</text>`;
       }
       if (showX) {
-        for (let t = 0; t <= maxT; t += 10) {
-          if (t % 20 && t !== maxT) continue;
-          s += `<text class="ch-tick" x="${X(t)}" y="${TOP + PH + 14}" text-anchor="middle">${t}°</text>`;
+        // 刻度：0°、每 20°，末端 maxT 必留。从末端往回挑，与已留刻度不足 26px 的让位，
+        // 所以先让掉末端前面的那个（如 60°）；0° 始终保留
+        const xt = [maxT];
+        for (let t = Math.floor((maxT - 1) / 20) * 20; t > 0; t -= 20) {
+          if (X(xt[xt.length - 1]) - X(t) >= 26 && X(t) - X(0) >= 26) xt.push(t);
         }
+        xt.push(0);
+        for (const t of xt) s += `<text class="ch-tick" x="${X(t)}" y="${TOP + PH + 14}" text-anchor="middle">${t}°</text>`;
       }
       st.series.forEach((sr) => {
         const arr = sr[key];
@@ -351,7 +358,8 @@
         (st.series.length > 1 ? `<tspan fill="${sr.color}">●</tspan> ` : '') + `<tspan class="ch-val">${fmt(at(sr[key], t))}</tspan>`).join('  ');
       s += `<text class="ch-title" x="0" y="12">${esc(title)}<tspan class="ch-tick" dx="4">${esc(unit)}</tspan></text>`;
       s += `<text class="ch-title" x="${w - PR}" y="12" text-anchor="end"><tspan class="ch-tick">${Math.round(t)}° </tspan>${vals}</text>`;
-      s += `<rect class="ch-hit" x="${PL}" y="0" width="${w - PL - PR}" height="${H}"/>`;
+      // touch-action: none，触屏上横向拖动是选角度而不是滚动页面
+      s += `<rect class="ch-hit" style="touch-action:none" x="${PL}" y="0" width="${w - PL - PR}" height="${H}"/>`;
       return s + '</svg>';
     }
 
@@ -381,6 +389,8 @@
       if (h !== st.hover) { st.hover = h; render(); }
     });
     el.addEventListener('pointerup', () => { down = false; });
+    // 触屏被系统打断（如来电、手势接管）时同样结束拖动，否则之后的移动仍会改角度
+    el.addEventListener('pointercancel', () => { down = false; });
     el.addEventListener('pointerleave', () => { if (st.hover != null) { st.hover = null; render(); } });
 
     return {
