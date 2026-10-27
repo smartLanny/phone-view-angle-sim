@@ -38,6 +38,7 @@ const FS = /* glsl */ `
   uniform float uCorner;    // 显示区圆角
   uniform vec3 uCut;        // 前摄开孔：中心距显示区顶边、胶囊直线段半长、半径（半径 0 = 没有）
   uniform vec3 uHoles[3];   // 另外的圆形开孔：x（相对中线）、中心距显示区顶边、半径（半径 0 = 没有）
+  uniform bool uModelHoles; // 开孔里有模型自带的镜头几何：屏幕在孔内透空（iPhone Duo 外屏）
   uniform vec2 uImgScale;
   uniform int uMode;        // 0 实测效果  1 原图  2 离轴角分布
   uniform float uChroma;    // 色偏（色度偏离）的倍数，亮度不变；1 = 实测。双眼叠加时按双眼累加放大
@@ -110,7 +111,10 @@ const FS = /* glsl */ `
     }
     for (int i = 0; i < 3; i++) {
       vec3 h = uHoles[i];
-      if (h.z > 0.0) scr *= smoothstep(h.z, h.z + px, length(pp - vec2(h.x, uHalf.y - h.y)));
+      if (h.z <= 0.0) continue;
+      float hd = length(pp - vec2(h.x, uHalf.y - h.y));
+      if (uModelHoles && hd < h.z) discard;   // 开孔里直接露出模型自带的镜头
+      scr *= smoothstep(h.z, h.z + px, hd);
     }
 
     outColor = vec4(mix(vec3(0.004), scr, inside), 1.0);
@@ -143,6 +147,7 @@ export function createScreenMaterial() {
       uMode: { value: 0 },
       uChroma: { value: 1 },
       uCurved: { value: false },
+      uModelHoles: { value: false },
       uHasData: { value: true },
     },
   });

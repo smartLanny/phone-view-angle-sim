@@ -84,7 +84,7 @@
       screen: {diag:7.58,resW:2670,resH:1878,corner:6.0,half:[78.765,55.40]},
       screens: {
         inner:{diag:7.58,resW:2670,resH:1878,corner:6.0,half:[78.765,55.40],cutout:{y:0,half:0,r:0},holes:[]},
-        outer:{diag:5.36,resW:1398,resH:2034,corner:5.6,half:[38.585,56.14],cutout:{y:0,half:0,r:0},holes:[[30.67,7.91,3.045]]},
+        outer:{diag:5.36,resW:1398,resH:2034,corner:5.6,half:[38.585,56.14],cutout:{y:0,half:0,r:0},holes:[[30.879,7.688,3.045]]},
       },
       cutout: {y:0,half:0,r:0},rough:.5,
       // 两种颜色对应原模型的两个颜色变体（KHR_materials_variants）
