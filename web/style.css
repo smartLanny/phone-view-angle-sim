@@ -483,7 +483,6 @@ body[data-layout="sheet"] .sec { padding: 14px 16px; }
 body[data-layout="sheet"] .pad-grid { display: grid; grid-template-columns: minmax(0, 46%) 1fr; gap: 14px; align-items: center; }
 body[data-layout="sheet"] .pad-read { justify-content: flex-start; flex-wrap: wrap; white-space: normal; margin: 0 0 8px; }
 @media (min-width: 561px) { body[data-layout="sheet"] #panel { border-left: 1px solid var(--line); border-right: 1px solid var(--line); } }
-@media (max-width: 380px) { #quick .qc-lbl { display: none; } }   /* 很窄的手机：开关不带文字 */
 
 /* ================= 演示模式：只留读数；指针移动时右下角出现“退出演示” ================= */
 body.clean #rail, body.clean #panel, body.clean #tip, body.clean #tip2, body.clean #hint { display: none !important; }
@@ -518,6 +517,11 @@ body.mode-3d #tip, body.mode-3d #tip2, body.mode-3d #hint, body.mode-3d .sframe 
 }
 /* 抽屉 / 侧栏里的快捷条：胶囊收紧，让机型名尽量完整 */
 #quick .qc-chip { padding: 0 7px; gap: 5px; }
-#quick .qc-switch { padding: 0 2px 0 7px; }
+#quick .qc-switch { padding: 0 6px 0 8px; }   /* 开关右边留出和左侧机型圆点一样的边距，不贴着面板边 */
 #quick .qc-row .qb-chip { padding: 0 8px; gap: 6px; }
-@media (max-width: 420px) { #quick .qb-caret { display: none; } }
+/* 一行放不下时逐级收紧（见 app.js fitQuick），始终不出界：
+   1 去掉机型名后的箭头、胶囊收窄；2 去掉数值胶囊的图标；3 去掉开关旁的文字 */
+#quickbar.fit1 .qb-caret { display: none; }
+#quickbar.fit1 .qc-chip { padding: 0 5px; }
+#quickbar.fit2 .qc-chip svg { display: none; }
+#quickbar.fit3 .qc-lbl { display: none; }

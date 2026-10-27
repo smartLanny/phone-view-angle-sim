@@ -260,7 +260,8 @@
       qb.style.left = (R.x0 + R.x1) / 2 + 'px';
       qb.style.top = '';
       qb.style.bottom = innerHeight - R.bottom + 'px';
-      qb.style.maxWidth = Math.max(R.x1 - R.x0 - 16, 200) + 'px';
+      const mw = Math.max(R.x1 - R.x0 - 16, 200) + 'px';
+      if (qb.style.maxWidth !== mw) { qb.style.maxWidth = mw; fitQuick(); }   // 悬浮快捷条变窄时同样逐级收紧
       R.bottom -= h + 12;
     }
     return R;
@@ -1552,6 +1553,7 @@
     if (docked && qb.parentElement !== $('quick')) $('quick').appendChild(qb);
     if (!docked && qb.parentElement !== body) body.insertBefore(qb, $('scrim'));
     if (docked) Object.assign(qb.style, { left: '', top: '', bottom: '', maxWidth: '' });
+    fitQuick();
     // 平板竖屏的“视角”页已常驻在底部，设置里只剩机型 / 画面
     $('tabs').querySelector('[data-tab="view"]').hidden = L === 'tab';
     if (L === 'tab' && S.tab === 'view') S.tab = 'device';
@@ -1839,7 +1841,21 @@
     $('qcFoldChip').hidden = !duo;
     if (!duo && quickOpen === 'fold') setQuickOpen(null);
     qb.classList.toggle('duo', duo);
+    fitQuick();
     if (!$('picker').hidden) { renderPicker(); requestAnimationFrame(placePicker); }   // 机型名变长变短时弹出框跟着对齐
+  }
+  /**
+   * 快捷条一行放不下（窄手机、系统放大字号、机型名长）时逐级收紧，直到放得下、机型名不被截断：
+   * 去掉箭头 → 去掉数值胶囊的图标 → 去掉开关旁的文字。最后仍放不下时机型名省略。
+   */
+  function fitQuick() {
+    const qb = $('quickbar'), row = qb.querySelector('.qc-row'), name = $('devName');
+    qb.classList.remove('fit1', 'fit2', 'fit3');
+    if (qb.hidden) return;
+    for (const lv of ['fit1', 'fit2', 'fit3']) {
+      if (row.scrollWidth <= row.clientWidth + 1 && name.scrollWidth <= name.clientWidth + 1) break;
+      qb.classList.add(lv);
+    }
   }
   // 快捷条上的数值胶囊（距离 / 展开角度）：点开一行滑条，再点收起；侧栏里两行常驻
   let quickOpen = null;
@@ -2099,6 +2115,7 @@
     ro.observe($('pad')); ro.observe($('charts'));
   }
   resize();
+  document.fonts?.ready.then(fitQuick);   // 字体加载完宽度会变，再量一次快捷条
   hashReady = true;
   setAppMode(appMode);
 
