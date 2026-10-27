@@ -13,10 +13,28 @@ export interface DuoData {inner:Profile|null;outer:Profile|null;reflection?:{inn
 export type DuoSurface='inner'|'outer';
 declare global {interface Window {DuoGeometry:any}}
 
+/**
+ * 外屏前摄下面那块长方形安装座（左半机身 x −75.06…−68.59、y 45.18…51.85、z −5.14…−4.30 mm）是机身内部结构，
+ * 实物被外屏的黑色印刷挡住；三维画面里它左右两面竖墙会在开孔两侧透出两条细线，加载时去掉这 10 个三角形。
+ * 只去掉三个顶点都在这个盒子里、且离镜头圆心 (−71.799, 48.452) 超过 3.1 mm 的三角形：镜头各零件半径不超过 3.05 mm，不受影响。
+ */
+function stripCameraHousing(leaf:THREE.Object3D) {
+  const inBox=(p:THREE.BufferAttribute|THREE.InterleavedBufferAttribute,i:number)=>{const x=p.getX(i),y=p.getY(i),z=p.getZ(i);
+    return x>-0.0751&&x<-0.0685&&y>0.0451&&y<0.0519&&z>-0.00515&&z<-0.00429&&Math.hypot(x+0.071799,y-0.048452)>0.0031;};
+  leaf.traverse(o=>{
+    const g=(o as THREE.Mesh).geometry as THREE.BufferGeometry|undefined;
+    if(!(o as THREE.Mesh).isMesh||!g?.index)return;
+    const p=g.attributes.position,ix=g.index.array,keep:number[]=[];
+    for(let t=0;t<ix.length;t+=3)if(!(inBox(p,ix[t])&&inBox(p,ix[t+1])&&inBox(p,ix[t+2])))keep.push(ix[t],ix[t+1],ix[t+2]);
+    if(keep.length<ix.length)g.setIndex(keep);
+  });
+}
+
 export async function buildDuoPhone(spec:DeviceSpec,buffer:ArrayBuffer,angle:number,surface:DuoSurface):Promise<PhoneModel> {
   const D=window.DuoGeometry, native=(await new GLTFLoader().parseAsync(buffer,'')).scene;
   const left=native.getObjectByName('left-leaf')!,right=native.getObjectByName('right-leaf')!;
   native.traverse(o=>{if((o as THREE.Mesh).isMesh){o.castShadow=true;o.receiveShadow=true;}});
+  stripCameraHousing(left);
   const group=new THREE.Group(),display=new THREE.Group();display.add(native);group.add(display);
   const geometry=(raw:any)=>{
     const g=new THREE.BufferGeometry();
@@ -28,7 +46,7 @@ export async function buildDuoPhone(spec:DeviceSpec,buffer:ArrayBuffer,angle:num
     g.setIndex(raw.idx);return g;
   };
   const surfaces=(['inner','outer'] as DuoSurface[]).map(key=>{
-    const d=D.screens[key],material=createScreenMaterial();material.uniforms.uCurved.value=true;material.uniforms.uHasData.value=false;
+    const d=D.screens[key],material=createScreenMaterial();material.uniforms.uCurved.value=true;material.uniforms.uModelHoles.value=!!d.modelHoles;material.uniforms.uHasData.value=false;
     material.uniforms.uHalf.value.set(d.width/2000,d.height/2000);material.uniforms.uCorner.value=d.corner/1000;
     material.uniforms.uCut.value.set(d.cutout.y/1000,d.cutout.half/1000,d.cutout.r/1000);
     (material.uniforms.uHoles.value as THREE.Vector3[]).forEach((v,i)=>{const h=d.holes[i];v.set(h?h[0]/1000:0,h?h[1]/1000:0,h?h[2]/1000:0);});
