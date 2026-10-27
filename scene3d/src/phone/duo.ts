@@ -28,7 +28,9 @@ export async function buildDuoPhone(spec:DeviceSpec,buffer:ArrayBuffer,angle:num
     g.setIndex(raw.idx);return g;
   };
   const surfaces=(['inner','outer'] as DuoSurface[]).map(key=>{
-    const d=D.screens[key],material=createScreenMaterial();material.uniforms.uCurved.value=true;material.uniforms.uModelHoles.value=!!d.modelHoles;material.uniforms.uHasData.value=false;
+    const d=D.screens[key],material=createScreenMaterial();material.uniforms.uCurved.value=true;material.uniforms.uModelHoles.value=!!d.modelHoles;
+    // 屏幕和模型里原有的黑色显示底板在同一平面（外屏 z = −5.24 mm），略微往前推，避免深度打架在开孔边漏出细线
+    material.polygonOffset=true;material.polygonOffsetFactor=-1;material.polygonOffsetUnits=-4;material.uniforms.uHasData.value=false;
     material.uniforms.uHalf.value.set(d.width/2000,d.height/2000);material.uniforms.uCorner.value=d.corner/1000;
     material.uniforms.uCut.value.set(d.cutout.y/1000,d.cutout.half/1000,d.cutout.r/1000);
     (material.uniforms.uHoles.value as THREE.Vector3[]).forEach((v,i)=>{const h=d.holes[i];v.set(h?h[0]/1000:0,h?h[1]/1000:0,h?h[2]/1000:0);});
