@@ -1508,6 +1508,28 @@
     if (W >= H * 0.95 || H < 520) return 'side';
     return W >= 700 ? 'tab' : 'sheet';
   }
+  /** 各节按原顺序放进左栏 / 设置；顺序已对时不动 DOM（避免打断正在拖动的控件）。 */
+  function placeSecs(toRail) {
+    [[$('rail'), SECS.filter((x) => toRail.includes(x.id))], [$('panelBody'), SECS.filter((x) => !toRail.includes(x.id))]].forEach(([parent, list]) => {
+      const cur = [...parent.children].filter((c) => c.classList.contains('sec'));
+      if (cur.length !== list.length || cur.some((c, i) => c !== list[i])) list.forEach((x) => parent.appendChild(x));
+    });
+  }
+  /**
+   * 宽屏左栏放不下（矮一些的屏幕）时，“显示方式”挪到右侧设置，左栏不出现滚动条。
+   * 只按其他几节的高度判断，挪动“显示方式”本身不改变结论，不会来回跳。
+   */
+  let railFull = true, dispH = 140;
+  function fitRail() {
+    if (layout() !== 'wide') return;
+    const rail = $('rail'), d = $('secDisplay'), inRail = d.parentElement === rail;
+    if (inRail) dispH = d.offsetHeight || dispH;
+    const fits = rail.scrollHeight - (inRail ? d.offsetHeight : 0) + dispH <= innerHeight - 40;
+    if (fits === inRail) return;
+    railFull = fits;
+    placeSecs(fits ? RAIL_SECS.wide : RAIL_SECS.wide.filter((id) => id !== 'secDisplay'));
+    relayout();
+  }
   let lastLayout = '';
   function applyLayout() {
     const W = window.innerWidth, H = window.innerHeight, body = document.body;
@@ -1522,15 +1544,9 @@
       if (L !== 'tab') setPanelOpen(false);
       lastLayout = L;
     }
-    const rail = $('rail'), pb = $('panelBody'), qb = $('quickbar');
-    // 各节按原顺序放进左栏 / 设置；顺序已对时不动 DOM（避免打断正在拖动的控件）
-    const place = (toRail) => [[rail, SECS.filter((x) => toRail.includes(x.id))], [pb, SECS.filter((x) => !toRail.includes(x.id))]].forEach(([parent, list]) => {
-      const cur = [...parent.children].filter((c) => c.classList.contains('sec'));
-      if (cur.length !== list.length || cur.some((c, i) => c !== list[i])) list.forEach((x) => parent.appendChild(x));
-    });
-    place(RAIL_SECS[L] || []);
-    // 宽屏左栏放不下（矮一些的屏幕）时，“显示方式”挪回右侧设置，左栏不出现滚动条
-    if (L === 'wide' && rail.scrollHeight > rail.clientHeight + 1) place(RAIL_SECS.wide.filter((id) => id !== 'secDisplay'));
+    const qb = $('quickbar');
+    placeSecs(L === 'wide' && !railFull ? RAIL_SECS.wide.filter((id) => id !== 'secDisplay') : RAIL_SECS[L] || []);
+    fitRail();
     // 侧栏 / 抽屉：快捷条放进设置栏顶部；宽屏 / 平板竖屏悬浮在手机下方
     const docked = L === 'side' || L === 'sheet';
     if (docked && qb.parentElement !== $('quick')) $('quick').appendChild(qb);
@@ -2079,7 +2095,7 @@
   syncProfileUI();
   Patterns.ready.then(() => { if (S.pattern) loadPattern(S.pattern, true); });
   if ('ResizeObserver' in window) {
-    const ro = new ResizeObserver(() => { pad.draw(); charts.render(); });
+    const ro = new ResizeObserver(() => { pad.draw(); charts.render(); fitRail(); });
     ro.observe($('pad')); ro.observe($('charts'));
   }
   resize();
