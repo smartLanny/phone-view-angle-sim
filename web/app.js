@@ -1523,11 +1523,14 @@
       lastLayout = L;
     }
     const rail = $('rail'), pb = $('panelBody'), qb = $('quickbar');
-    const toRail = RAIL_SECS[L] || [];
-    SECS.forEach((sec) => {
-      const dest = toRail.includes(sec.id) ? rail : pb;
-      if (sec.parentElement !== dest) dest.appendChild(sec);
+    // 各节按原顺序放进左栏 / 设置；顺序已对时不动 DOM（避免打断正在拖动的控件）
+    const place = (toRail) => [[rail, SECS.filter((x) => toRail.includes(x.id))], [pb, SECS.filter((x) => !toRail.includes(x.id))]].forEach(([parent, list]) => {
+      const cur = [...parent.children].filter((c) => c.classList.contains('sec'));
+      if (cur.length !== list.length || cur.some((c, i) => c !== list[i])) list.forEach((x) => parent.appendChild(x));
     });
+    place(RAIL_SECS[L] || []);
+    // 宽屏左栏放不下（矮一些的屏幕）时，“显示方式”挪回右侧设置，左栏不出现滚动条
+    if (L === 'wide' && rail.scrollHeight > rail.clientHeight + 1) place(RAIL_SECS.wide.filter((id) => id !== 'secDisplay'));
     // 侧栏 / 抽屉：快捷条放进设置栏顶部；宽屏 / 平板竖屏悬浮在手机下方
     const docked = L === 'side' || L === 'sheet';
     if (docked && qb.parentElement !== $('quick')) $('quick').appendChild(qb);
@@ -1652,7 +1655,13 @@
         if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
         toggleSweep();
         break;
-      case '0': case 'Escape': resetTilt(); break;
+      case 'Escape':
+        if (document.body.classList.contains('panel-open')) setPanelOpen(false);
+        else if (quickOpen) setQuickOpen(null);
+        else if (S.clean) setClean(false);
+        else resetTilt();
+        break;
+      case '0': resetTilt(); break;
       case 'h': case 'H': setClean(!S.clean); break;
       case 'p': case 'P':
         if (!S.compare && hasPrivacy(S.device)) { S.privacy = !S.privacy; syncProfileUI(); requestRender(); }

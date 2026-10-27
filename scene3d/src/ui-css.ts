@@ -203,7 +203,7 @@ export const CSS = /* css */ `
 .tl-chip.tl-lift, .s3d-bar button.tl-lift { background: rgba(255,255,255,.22); }
 .tl-empty { color: var(--mu); padding: .4em .2em; }
 .tl-foot { display: flex; justify-content: space-between; align-items: center; gap: 1em; margin-top: .55em; font-size: calc(12px * var(--k)); color: var(--mu); }
-.tl-foot .s3d-link { padding: 0; font-size: 1em; }
+.tl-foot .s3d-link { flex: none; padding: 0; font-size: 1em; white-space: nowrap; }
 .tl-mark { position: absolute; display: none; width: calc(3px * var(--k)); margin-left: calc(-1.5px * var(--k)); background: var(--ac); border-radius: 2px; pointer-events: none; }
 .tl-ghost { position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none; white-space: nowrap;
   margin: calc(-14px * var(--s3d-k, 1)) 0 0 calc(-16px * var(--s3d-k, 1)); padding: .35em .75em; border-radius: .6em;
@@ -274,6 +274,7 @@ body.s3d-recording .app-mode { display: none !important; }
   .s3d-adjust, .s3d-data { left: auto; right: max(8px, env(safe-area-inset-right, 0px)); top: 64px; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); width: 280px; max-height: none; transform: none; overflow-y: auto; }
   .s3d-data-body { display: block; }
   .s3d-tl, .s3d-toast { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+  .s3d-tl { max-height: calc(100% - 170px - env(safe-area-inset-bottom, 0px)); overflow-y: auto; }   /* 不盖住左上读数 */
   .s3d-hud { left: max(12px, env(safe-area-inset-left, 0px)); top: 8px; }
   .s3d-hero [data-k="theta"], .s3d.eyeview .s3d-hero [data-k="theta"] { font-size: 34px; }
   .s3d-hero { margin-top: 4px; }
