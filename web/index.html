@@ -5,7 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>可视角度仿真</title>
-<link rel="stylesheet" href="style.css?v=20261027-qbfit">
+<link rel="stylesheet" href="style.css?v=20261102-load">
+<script>
+  // 机身模型（约 2–3 MB）：默认打开的是 iPhone Duo，和下面的脚本同时开始下载，不必等页面脚本都跑完
+  window.PHONE_ASSET_VERSION = { iphoneduo: '20261102-jpg', iphone18pm: '20261102-jpg', iphone17pm: '20261102-jpg' };
+  (function () {
+    var q = location.hash.slice(1);
+    if (/(^|&)(dev|cmp)=/.test(q)) return;   // 网址指定了别的机型或对比时按需加载
+    var l = document.createElement('link');
+    l.rel = 'preload'; l.as = 'script'; l.href = 'assets/iphoneduo.js?v=' + window.PHONE_ASSET_VERSION.iphoneduo;
+    document.head.appendChild(l);
+  })();
+</script>
 </head>
 <body data-layout="wide">
 <div class="sframe" id="sf0"></div>
@@ -35,7 +46,8 @@
 <aside id="rail" aria-label="视角">
   <div class="rail-head">
     <div class="brand"><span class="logo" aria-hidden="true"></span>可视角度仿真<span class="tag" id="dataTag">实测数据</span></div>
-    <button class="icon-btn present-btn" title="演示模式：隐藏界面（H）" aria-label="演示模式"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+    <div class="rail-actions"><button class="icon-btn share-btn" title="复制当前视角的链接" aria-label="复制当前视角的链接"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg></button>
+    <button class="icon-btn present-btn" title="演示模式：隐藏界面（H）" aria-label="演示模式"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button></div>
   </div>
   <nav class="seg mode-switch" aria-label="模式"><button data-v="sim" class="on">屏幕仿真</button><button data-v="scene">场景演示</button></nav>
 </aside>
@@ -188,8 +200,9 @@
       <div class="present-row">
         <button id="open3d" class="wide-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="6.5" r="3"/><path d="M6 21v-3.5a6 6 0 0 1 12 0V21"/></svg>三维场景演示</button>
         <button class="wide-btn present-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>隐藏界面</button>
+        <button class="wide-btn share-btn span2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>复制当前视角的链接</button>
       </div>
-      <p class="note">三维场景可编排播放、导出视频。隐藏界面后，移动指针或轻点画面，右下角出现“退出演示”。</p>
+      <p class="note">三维场景可编排播放、导出视频。隐藏界面后，移动指针或轻点画面，右下角出现“退出演示”。链接里带着机型、角度和距离，打开即是同一个画面。</p>
     </section>
 
     <section class="sec" data-tab="screen" id="secHelp">
@@ -255,6 +268,7 @@
 <div class="caption" id="cap1"></div>
 <div id="toast"></div>
 <button id="cleanExit" aria-label="退出演示模式">退出演示</button>
+<div id="loading" role="status" hidden><span class="spin" aria-hidden="true"></span>正在加载外观模型…</div>
 <div id="hint">拖动画面转动手机 · 拖动左侧方向盘直接选角度 · 滚轮调距离 · 空格自动扫描</div>
 <div id="drop">松开以加载图片</div>
 
@@ -265,9 +279,9 @@
   <script src="patterns.js?v=20261025-duo-ui-account"></script>
 <script src="devices.js?v=20261027-hole"></script>
 <script src="duo-geometry.js?v=20261027-hole"></script>
-<script src="phone3d.js?v=20261026-18pm"></script>
+<script src="phone3d.js?v=20261102-jpg"></script>
 <script src="viz.js?v=20261027-ui"></script>
 <!-- 三维场景（scene3d-person.js、scene3d.js）只在进入场景演示时再加载，见 app.js -->
-<script src="app.js?v=20261027-qbfit"></script>
+<script src="app.js?v=20261102-load"></script>
 </body>
 </html>
