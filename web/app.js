@@ -369,7 +369,12 @@
     document.documentElement.style.setProperty('--sx', ((areaX0 + areaW / 2) / W * 100).toFixed(1) + '%');
     $('hint').style.left = areaX0 + areaW / 2 + 'px';
     $('hint').style.top = Math.max(R.top, R.bottom - 36) + 'px';
-    $('hint').classList.toggle('busy', cards);   // 有数据卡时不再叠一条提示
+    // 外观模型还在下载时显示加载提示（先显示简化机身，加载完再换成模型）；它和操作提示在同一位置，加载时操作提示让位
+    const loadingNow = devs.some((d) => d.spec.model && pendingModels.has(d.spec.model));
+    const ld = $('loading');
+    ld.hidden = !loadingNow || S.clean;
+    if (loadingNow) Object.assign(ld.style, { left: areaX0 + areaW / 2 + 'px', top: Math.max(R.top, R.bottom - 36) + 'px' });
+    $('hint').classList.toggle('busy', cards || loadingNow);   // 有数据卡或正在加载时不再叠一条提示
     return views;
   }
   // ---------- WebGL ----------
@@ -1465,7 +1470,7 @@
   }
 
   let toastTimer = 0;
-  /** 只用于出错提示；正常操作的结果在界面上已经看得到，不再弹提示。 */
+  /** 只用于出错和“已复制链接”这类界面上看不到结果的操作；其余操作的结果在界面上已经看得到，不再弹提示。 */
   function toast(msg) {
     const t = $('toast');
     t.textContent = msg;
@@ -1558,7 +1563,7 @@
     $('tabs').querySelector('[data-tab="view"]').hidden = L === 'tab';
     if (L === 'tab' && S.tab === 'view') S.tab = 'device';
     const touch = !hoverable.matches;
-    $('hint').textContent = touch ? '拖动手机改变观看角度 · 双击回正'
+    $('hint').textContent = touch ? '拖动改变角度 · 双指捏合调距离 · 双击回正'
       : '拖动画面转动手机 · 滚轮调距离 · 空格自动扫描';
     applyTab();
     placePicker();
@@ -1630,16 +1635,28 @@
   setTimeout(hideHint, 10000);
   ['pointerdown', 'wheel', 'keydown'].forEach((ev) => window.addEventListener(ev, hideHint, { once: true, passive: true }));
 
-  let drag = null;
+  let drag = null, pinch = null;
+  const fingers = new Map();
+  const spread = () => { const [a, b] = [...fingers.values()]; return Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1); };
   canvas.addEventListener('pointerdown', (e) => {
     cancelAnimationFrame(anim);
     stopSweep();
-    drag = { x: e.clientX, y: e.clientY, moved: 0 };
     canvas.setPointerCapture(e.pointerId);
+    if (e.pointerType === 'touch') fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (fingers.size >= 2) {
+      // 第二根手指落下：从拖动转为捏合，之后直到全部抬起都不再转动手机
+      if (fingers.size === 2) pinch = { d0: spread(), cm0: S.dist / 10 };
+      drag = null;
+      canvas.classList.remove('dragging');
+      return;
+    }
+    drag = { x: e.clientX, y: e.clientY, moved: 0 };
     canvas.classList.add('dragging');
   });
   canvas.addEventListener('pointermove', (e) => {
     hover = e.pointerType === 'mouse' ? { x: e.clientX, y: e.clientY } : null;
+    if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch) { if (fingers.size >= 2) setDist(pinch.cm0 * pinch.d0 / spread()); return; }
     if (drag) {
       const k = 0.25;
       setTilt(S.tilt[0] + (e.clientX - drag.x) * k, S.tilt[1] - (e.clientY - drag.y) * k);
@@ -1649,11 +1666,13 @@
     }
   });
   const endDrag = () => { drag = null; canvas.classList.remove('dragging'); };
-  canvas.addEventListener('pointerup', () => {
+  canvas.addEventListener('pointerup', (e) => {
+    fingers.delete(e.pointerId);
+    if (pinch) { if (!fingers.size) pinch = null; return; }
     if (drag && drag.moved < 6) { if (document.body.classList.contains('panel-open')) setPanelOpen(false); setQuickOpen(null); }
     endDrag();
   });
-  canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('pointercancel', (e) => { fingers.delete(e.pointerId); if (!fingers.size) pinch = null; endDrag(); });
   canvas.addEventListener('pointerleave', () => { hover = null; updateTip(); });
   canvas.addEventListener('dblclick', resetTilt);
   canvas.addEventListener('wheel', (e) => {
@@ -2019,10 +2038,8 @@
 
   // ---------- 地址栏保存状态（便于收藏 / 分享同一个画面） ----------
   let hashTimer = 0, hashReady = false;
-  function writeHash() {
-    if (!hashReady) return;
-    clearTimeout(hashTimer);
-    hashTimer = setTimeout(() => {
+  /** 当前画面的状态（机型、角度、距离等）写成网址 # 后面的参数。 */
+  function hashString() {
       const q = new URLSearchParams();
       q.set('dev', DEVICES.indexOf(S.device));
       if (S.privacy) q.set('pv', 1);
@@ -2038,9 +2055,26 @@
       if (S.padMetric !== 'lum') q.set('k', S.padMetric);
       if (S.pal !== 'jet') q.set('pal', S.pal);
       if (appMode === 'scene') q.set('mode', '3d');
-      try { history.replaceState(null, '', '#' + q.toString()); } catch (err) { /* file:// 下个别浏览器不允许 */ }
+      return q.toString();
+  }
+  function writeHash() {
+    if (!hashReady) return;
+    clearTimeout(hashTimer);
+    hashTimer = setTimeout(() => {
+      try { history.replaceState(null, '', '#' + hashString()); } catch (err) { /* file:// 下个别浏览器不允许 */ }
     }, 300);
   }
+  /** 分享当前视角：手机上调起系统分享，电脑上复制链接；都不行时弹出链接手动复制。 */
+  async function shareView() {
+    const url = location.href.split('#')[0] + '#' + hashString();
+    try { history.replaceState(null, '', url); } catch (err) { /* 同上 */ }
+    if (navigator.share && !hoverable.matches) {
+      try { await navigator.share({ title: document.title, url }); return; } catch (err) { if (err.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(url); toast('已复制当前视角的链接'); }
+    catch (err) { window.prompt('复制这个链接：', url); }
+  }
+  document.querySelectorAll('.share-btn').forEach((b) => b.addEventListener('click', shareView));
   function readHash() {
     const q = new URLSearchParams(location.hash.slice(1));
     const num = (k, d) => (q.has(k) && isFinite(+q.get(k)) ? +q.get(k) : d);

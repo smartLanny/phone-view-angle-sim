@@ -103,7 +103,8 @@
   }
 
   // 模型资源更新后改这里，避免浏览器沿用缓存里的旧模型
-  const ASSET_VERSION = { iphoneduo: '20261026-ao', iphone18pm: '20261026' };
+  // 版本号写在 index.html 头部（那里也用它提前下载默认机型的模型），这里只是后备
+  const ASSET_VERSION = root.PHONE_ASSET_VERSION || { iphoneduo: '20261102-jpg', iphone18pm: '20261102-jpg', iphone17pm: '20261102-jpg' };
   const modelLoads = {};
   const modelBuffers = {};
   const modelTexStats = {};   // 模型贴图的平均值（底色 / 金属度粗糙度）：贴图不可用时折算进材质常量

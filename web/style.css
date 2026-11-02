@@ -30,6 +30,11 @@ html, body {
   background-color: var(--bg);
 }
 button, select, input { font: inherit; color: inherit; }
+html { -webkit-tap-highlight-color: transparent; }
+button, select, input, label, .upload { touch-action: manipulation; }
+@media (hover: none) {
+  body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+}
 h2 { margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--text-2); letter-spacing: .02em; }
 [hidden] { display: none !important; }
 svg { flex: none; }
@@ -89,6 +94,7 @@ svg { flex: none; }
 
 /* 品牌行 + 模式切换（宽屏左栏顶部） */
 .rail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 12px 0 18px; }
+.rail-actions { display: flex; gap: 2px; flex: none; }
 .brand { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: .02em; white-space: nowrap; }
 .logo {
   flex: none; width: 16px; height: 16px; border-radius: 50%;
@@ -127,6 +133,7 @@ button:focus-visible, select:focus-visible, input:focus-visible + .switch, .uplo
 @media (pointer: coarse) { .seg.mini button { min-height: 34px; } }
 .wide-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: var(--tap); white-space: nowrap; }
 .present-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.present-row .span2 { grid-column: 1 / -1; }
 
 input[type=range] { width: 100%; margin: 4px 0; accent-color: var(--accent); }
 select {
@@ -285,6 +292,16 @@ body.compare #secPad .sec-head h2 { display: none; }   /* 对比时标题让位�
   background: rgba(16, 17, 20, .7); border: 1px solid var(--line); transition: opacity .6s;
 }
 #hint.gone { opacity: 0; }
+/* 外观模型下载中：和操作提示同一位置的小胶囊，过 0.4 秒还没加载完才出现，避免一闪而过 */
+#loading {
+  position: fixed; transform: translateX(-50%); z-index: 2; pointer-events: none; white-space: nowrap;
+  display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 99px; font-size: 12px; color: var(--text-2);
+  background: rgba(16, 17, 20, .78); border: 1px solid var(--line); animation: fade-in .3s .4s both;
+}
+#loading .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .18); border-top-color: var(--text); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+body.mode-3d #loading { display: none !important; }
 #hint.busy, body[data-layout="side"] #hint { display: none; }
 
 /* 双眼立体：页面底色均匀，两块完全相同的背景框供双眼融合 */
@@ -361,7 +378,7 @@ body[data-layout="sheet"] #scrim { background: rgba(0, 0, 0, .42); }
 }
 body[data-layout="sheet"] #picker {
   left: 50% !important; right: auto; top: auto !important; bottom: 0 !important; width: min(100%, 560px); max-width: none; transform: translateX(-50%);
-  max-height: 82vh !important; border-radius: 20px 20px 0 0; border-bottom: 0; padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+  max-height: 82vh !important; max-height: 82dvh !important; border-radius: 20px 20px 0 0; border-bottom: 0; padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
 }
 .pk-head { display: flex; align-items: center; justify-content: space-between; }
 .pk-head h2 { margin: 0; font-size: 15px; color: var(--text); }
@@ -466,10 +483,10 @@ body[data-layout="sheet"] .hero-sub { display: none; }
 body[data-layout="sheet"] .hs-row { gap: 14px; }
 body[data-layout="sheet"] .hs-row b { font-size: 17px; }
 body[data-layout="sheet"] #panel {
-  position: fixed; left: 50%; bottom: 0; width: min(100%, 560px); height: 46vh; transform: translateX(-50%);
+  position: fixed; left: 50%; bottom: 0; width: min(100%, 560px); height: 46vh; height: 46dvh; transform: translateX(-50%);
   border-radius: 20px 20px 0 0; border-bottom: 0; padding-bottom: env(safe-area-inset-bottom);
 }
-body[data-layout="sheet"].sheet-full #panel { height: 88vh; }
+body[data-layout="sheet"].sheet-full #panel { height: 88vh; height: 88dvh; }
 body[data-layout="sheet"].sheet-min #panel { height: auto; }
 body[data-layout="sheet"].sheet-min #panelBody { display: none; }
 body[data-layout="sheet"].sheet-min #tabs button.on { background: transparent; color: var(--text-2); }
