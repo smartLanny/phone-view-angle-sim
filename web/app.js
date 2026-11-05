@@ -50,6 +50,7 @@
       ? [pick(DEVICES[0]).id, pick(DEVICES[1]).id]
       : [PROFILES[0].id, (PROFILES[1] || PROFILES[0]).id],
     padMetric: 'lum', pal: 'jet', tab: 'view', clean: false, sweep: null, padSide: 0,   // padSide：对比时方向盘显示左 / 右哪一台
+    unif: '', heat: 2,   // unif：计入哪一档实测均匀度（'' 不计）；heat：上次看的分布图（2 离轴角 / 3 亮度 / 4 色偏）
   };
 
   let surfaceMix=0;
@@ -108,6 +109,65 @@
     return { jncd: j, lum: l };
   })();
   const JMAX = (() => { const s = [2, 4, 6, 8, 10, 12, 16, 20, 24, 30, 40]; return s.find((v) => v >= RANGE.jncd) || Math.ceil(RANGE.jncd); })();
+
+  /** 查找表在 (θ, ψ) 处的双线性取样（与着色器 lut() 相同）：前 9 个为变换矩阵 T（行主序），后 3 个为白场 XYZ。 */
+  function lutAt(id, theta, psi) {
+    const lut = getLUT(id), w = lut.width, D = lut.data, out = new Array(12);
+    const x = Math.min(Math.max(theta, 0), w - 1), x0 = Math.min(Math.floor(x), w - 2), fx = x - x0;
+    const y = AngleModel.norm360(psi), y0 = Math.floor(y) % 360, y1 = (y0 + 1) % 360, fy = y - Math.floor(y);
+    for (let blk = 0; blk < 4; blk++) {
+      const a = ((blk * 360 + y0) * w + x0) * 4, c = ((blk * 360 + y1) * w + x0) * 4;
+      for (let k = 0; k < 3; k++) {
+        out[blk * 3 + k] = (D[a + k] * (1 - fx) + D[a + 4 + k] * fx) * (1 - fy) + (D[c + k] * (1 - fx) + D[c + 4 + k] * fx) * fy;
+      }
+    }
+    return out;
+  }
+
+  // ---------- 屏幕均匀度（二维亮度计实测，见 uniformity.js） ----------
+  /** 本机三基色矩阵（法线方向）与正对白场，亮度 / 色偏分布和读数用。 */
+  const panels = {};
+  function panelOf(id) {
+    if (panels[id]) return panels[id];
+    const m = getModel(id);
+    if (!m) return null;
+    const { P } = Uniformity.panel(m), W = m.ref.W;
+    return (panels[id] = { P, colMajor: [P[0], P[3], P[6], P[1], P[4], P[7], P[2], P[5], P[8]], refW: W, refUV: m.uvPrime(W), refLab: AngleModel.xyzToLab(W, W) });
+  }
+  /** 三基色增益 g 下这一方向的白场（T 为该方向的变换矩阵）；g 为 1 时与 evalAt 的结果相同。 */
+  function whiteWith(id, T, g) {
+    const pn = panelOf(id), t = [0, 1, 2].map((r) => T[r * 3] * g[0] + T[r * 3 + 1] * g[1] + T[r * 3 + 2] * g[2]);
+    const XYZ = [0, 1, 2].map((r) => pn.P[r * 3] * t[0] + pn.P[r * 3 + 1] * t[1] + pn.P[r * 3 + 2] * t[2]);
+    const uv = getModel(id).uvPrime(XYZ), duv = Math.hypot(uv[0] - pn.refUV[0], uv[1] - pn.refUV[1]);
+    return { W: XYZ, yRatio: XYZ[1] / pn.refW[1], duv, jncd: duv / AngleModel.JNCD };
+  }
+  /** evalAt 的结果再乘上这一点的均匀度增益（亮度、色偏、ΔE2000 一起改）。 */
+  function withGain(id, e, g) {
+    if (!g) return e;
+    const w = whiteWith(id, e.T, g), pn = panelOf(id);
+    return Object.assign({}, e, w, { de00: AngleModel.deltaE2000(pn.refLab, AngleModel.xyzToLab(w.W, pn.refW)) });
+  }
+  const unifFailed = new Set();
+  function loadUnif(device) {
+    if (unifFailed.has(device)) return;
+    Uniformity.load(device).then(() => { syncUnifUI(); requestRender(); })
+      .catch((err) => { unifFailed.add(device); toast(err.message); syncUnifUI(); });
+  }
+  /**
+   * 这一状态现在是否计入均匀度。没有数据（Duo）、系统防窥模式（没有单独测，不拿普通模式的顶替）时不计；
+   * 贴防窥膜不改变面板本身，沿用未贴膜时的实测。网格还没加载时先开始加载。
+   */
+  function unifState(id) {
+    const p = byId(id);
+    if (!S.unif) return { on: false, why: 'off' };
+    if (!Uniformity.info(p.device)) return { on: false, why: 'none' };
+    if (p.privacy && p.privacyKind === 'mode') return { on: false, why: 'state' };
+    const c = Uniformity.condition(p.device, S.unif);
+    if (!c) return { on: false, why: 'none' };
+    if (!Uniformity.ready(p.device)) { loadUnif(p.device); return { on: false, why: unifFailed.has(p.device) ? 'failed' : 'loading', c }; }
+    const g = getModel(id) && Uniformity.gains(p.device, S.unif, getModel(id));
+    return g ? { on: true, c, g } : { on: false, why: 'none' };
+  }
 
   const PRIVACY_TEXT = {
     mode: { switch: '防窥模式', on: '防窥开启', off: '防窥关闭', hint: '系统防窥开 / 关各一组实测', short: '防窥' },
@@ -643,6 +703,12 @@
   uniform float uMatte;     // 防眩光磨砂膜（Duo 内屏）：1 = 有；0 = 普通镜面玻璃屏，不画表面反射
   uniform vec3 uUdc;        // 屏下摄像头：中心（屏幕局部坐标，毫米）和半径；半径 0 为没有
   uniform bool uModelHoles; // 开孔里有模型自带的镜头几何：屏幕在孔内透空，直接露出模型
+  uniform sampler2D uUnif;  // 屏幕均匀度：显示区各处三基色的相对增益（覆盖整个显示区矩形，第一行为顶边）
+  uniform bool uUnifOn;
+  uniform vec2 uUnifHalf;   // 均匀度网格的半宽 / 半高（mm）
+  uniform mat3 uPanel;      // 本机三基色 → XYZ（法线方向，白 Y = 1）：亮度 / 色偏分布用
+  uniform vec2 uRefUV;      // 正对时白场的 u′v′
+  uniform vec3 uHeat;       // 亮度 / 色偏分布的量程（下限、上限）与等值线间隔
   ${COLOR_GLSL}
   ${ENV_GLSL}
 
@@ -714,6 +780,8 @@
     vec2 iuv = (disp / uDispMM) * uImgScale + 0.5;
     bool inImg = all(greaterThanEqual(iuv, vec2(0.0))) && all(lessThanEqual(iuv, vec2(1.0)));
     vec3 lin = inImg ? srgb2lin(texture(uImg, iuv).rgb) : vec3(0.0);
+    // 均匀度跟着面板走（屏幕局部坐标），与画面横竖无关
+    vec3 gain = uUnifOn ? texture(uUnif, vec2(pp.x / (2.0 * uUnifHalf.x) + 0.5, 0.5 - pp.y / (2.0 * uUnifHalf.y))).rgb : vec3(1.0);
 
     vec3 scr;
     if (uMode == 2) {
@@ -723,10 +791,25 @@
       scr = texture(uPal, vec2(t, 0.5)).rgb;
       vec3 iso = dot(scr, vec3(0.2126, 0.7152, 0.0722)) > 0.4 ? vec3(0.0) : vec3(1.0);
       scr = mix(scr, iso, 0.6 * isoLine(th, 10.0));
+    } else if (uMode >= 3) {
+      // 眼睛看到的白场：三基色先乘这一处的均匀度增益，再按这一点的离轴角变换。3 = 亮度（正对典型值 = 1），4 = 色偏（JNCD）
+      vec3 XYZ = uPanel * vec3(dot(lut(0, th, ps), gain), dot(lut(1, th, ps), gain), dot(lut(2, th, ps), gain));
+      float v = XYZ.y;
+      if (uMode == 4) {
+        vec2 uv = vec2(4.0 * XYZ.x, 9.0 * XYZ.y) / max(XYZ.x + 15.0 * XYZ.y + 3.0 * XYZ.z, 1e-6);
+        v = length(uv - uRefUV) / 0.004;
+      }
+      float t = clamp((v - uHeat.x) / max(uHeat.y - uHeat.x, 1e-6), 0.0, 1.0);
+      if (uBands > 0) t = (min(floor(t * float(uBands)), float(uBands - 1)) + 0.5) / float(uBands);
+      scr = texture(uPal, vec2(t, 0.5)).rgb;
+      vec3 iso = dot(scr, vec3(0.2126, 0.7152, 0.0722)) > 0.4 ? vec3(0.0) : vec3(1.0);
+      // 计入均匀度时等值线淡一些：低灰阶的实测图有颗粒（可能是真实的细碎不均，也有仪器噪声），线画实了会盖住颜色
+      scr = mix(scr, iso, (uUnifOn ? 0.36 : 0.6) * isoLine(v, uHeat.z));
     } else if (uMode == 1) {
       scr = lin2srgb(lin);
     } else {
-      vec3 sim = vec3(dot(lut(0, th, ps), lin), dot(lut(1, th, ps), lin), dot(lut(2, th, ps), lin));
+      vec3 g = lin * gain;
+      vec3 sim = vec3(dot(lut(0, th, ps), g), dot(lut(1, th, ps), g), dot(lut(2, th, ps), g));
       scr = lin2srgb(sim);
     }
     vec2 q = pp - vec2(0.0, uScreenHalf.y - uCut.x);
@@ -824,6 +907,7 @@
   gl.useProgram(screenProg.p);
   gl.uniform1i(screenProg.u.uImg, 0);
   gl.uniform1i(screenProg.u.uLut, 1);
+  gl.uniform1i(screenProg.u.uUnif, 8);
 
   gl.useProgram(bodyProg.p);
   gl.uniform1i(bodyProg.u.uBackTex, 3);
@@ -893,6 +977,77 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     lutTex[id] = { tex, width: lut.width };
     return lut.width;
+  }
+
+  // 均匀度增益放在纹理单元 8（RGBA16F，可线性过滤）；不计均匀度时绑一张 1×1 的白（增益 1）
+  const unifTex = new Map();
+  let unitTex = null;
+  function bindUnif(st) {
+    gl.activeTexture(gl.TEXTURE8);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    const make = (w, h, data, filter) => {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.FLOAT, data);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      return tex;
+    };
+    if (st.on) {
+      if (!unifTex.has(st.g)) unifTex.set(st.g, make(st.g.cols, st.g.rows, st.g.data, gl.LINEAR));
+      else gl.bindTexture(gl.TEXTURE_2D, unifTex.get(st.g));
+      gl.uniform2fv(screenProg.u.uUnifHalf, st.g.half);
+    } else if (!unitTex) unitTex = make(1, 1, new Float32Array([1, 1, 1, 1]), gl.NEAREST);
+    else gl.bindTexture(gl.TEXTURE_2D, unitTex);
+    gl.uniform1i(screenProg.u.uUnifOn, st.on ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  /** 屏幕上的一组取样点（局部坐标，及 Duo 曲面的切向框架、平面屏的毫米坐标），分布图量程和 9 点读数用。 */
+  function screenPoints(d, id, nx, ny) {
+    const surface = byId(id).surface, [hx, hy] = d.screenHalf, out = [];
+    for (let iy = 0; iy < ny; iy++) for (let ix = 0; ix < nx; ix++) {
+      const u = (ix + 0.5) / nx, v = (iy + 0.5) / ny;
+      const frame = surface ? d.surfaceFrame?.(surface, u, v) : null;
+      const x = (u * 2 - 1) * hx, y = (v * 2 - 1) * hy;
+      out.push(frame ? { p: frame.point, f: frame, xy: null } : { p: [x, y, 0], f: null, xy: [x, y] });
+    }
+    return out;
+  }
+  /** 眼睛（局部坐标）看屏幕上某一点的白场：亮度比（正对典型值 = 1）与色偏 JNCD，含均匀度增益。 */
+  function seenAt(id, eye, pt, st) {
+    const a = anglesAt(eye, pt.p, pt.f), L = lutAt(id, a.theta, a.psi);
+    return whiteWith(id, L, st.on && pt.xy ? st.g.at(pt.xy[0], pt.xy[1]) : [1, 1, 1]);
+  }
+  /**
+   * 亮度 / 色偏分布图的量程：在各台屏幕上取一组点，按当前眼睛位置算出最小 / 最大值，
+   * 取整到等值线间隔（约 4–8 条），对比时两台共用。
+   */
+  let heat = { lo: 0, hi: 1, step: 0.1 };
+  function computeHeat(M, ids) {
+    let lo = Infinity, hi = -Infinity, unif = false;
+    views.forEach((v, i) => {
+      const id = ids[i];
+      if (!getModel(id)) return;
+      const st = unifState(id), eye = applyT(M, v.eye);
+      unif = unif || st.on;
+      for (const pt of screenPoints(v.dev, id, 15, 31)) {
+        const w = seenAt(id, eye, pt, st), val = S.mode === 3 ? w.yRatio : w.jncd;
+        lo = Math.min(lo, val); hi = Math.max(hi, val);
+      }
+    });
+    if (!isFinite(lo)) { heat = S.mode === 3 ? { lo: 0, hi: 1, step: 0.1 } : { lo: 0, hi: 4, step: 1 }; return; }
+    // 计入均匀度时等值线至少隔 1 % / 0.5 JNCD：再密就是仪器噪声的起伏了
+    if (S.mode === 3) {
+      const span = Math.max(hi - lo, 0.02), step = [0.005, 0.01, 0.02, 0.05, 0.1, 0.2].filter((s) => !unif || s >= 0.01).find((s) => span / s <= 8) || 0.2;
+      const a = Math.floor(lo / step + 1e-6) * step, b = Math.max(Math.ceil(hi / step - 1e-6) * step, a + 2 * step);
+      heat = { lo: a, hi: b, step };
+    } else {
+      const step = [0.25, 0.5, 1, 2, 5, 10].filter((s) => !unif || s >= 0.5).find((s) => Math.max(hi, 1) / s <= 8) || 10;
+      heat = { lo: 0, hi: Math.max(Math.ceil(hi / step - 1e-6) * step, 2 * step), step };
+    }
   }
 
   const backTextures = new Map();
@@ -1086,15 +1241,17 @@
     gl.useProgram(screenProg.p);
     gl.uniform1f(screenProg.u.uRot, S.rot);
     const P = Viz.palette(S.pal);
-    gl.uniform1i(screenProg.u.uBands, P.banded ? 7 : 0);
+    if (S.mode >= 3) computeHeat(M, ids);
+    gl.uniform1i(screenProg.u.uBands, !P.banded ? 0 : S.mode >= 3 ? Math.round((heat.hi - heat.lo) / heat.step) : 7);
     gl.uniform1i(screenProg.u.uPalFlip, P.flipAngle ? 1 : 0);
+    gl.uniform3f(screenProg.u.uHeat, heat.lo, heat.hi, heat.step);
     views.forEach((v, i) => {
       clip(v);
       const d = v.dev;
       for (const screen of d.screens) {
         const cut = screen.cutout || { y: 0, half: 0, r: 0 };
         const id = screen.key ? `duo-${screen.key}` : ids[i];
-        gl.uniform1i(screenProg.u.uMode, S.mode === 0 && !getModel(id) ? 1 : S.mode);
+        gl.uniform1i(screenProg.u.uMode, getModel(id) ? S.mode : S.mode === 2 ? 2 : 1);   // 没有可视角数据时只有离轴角分布可画
         gl.uniform2fv(screenProg.u.uScreenHalf, screen.screenHalf);
         gl.uniform1f(screenProg.u.uCorner, screen.corner);
         const udc = screen.udc;
@@ -1112,6 +1269,9 @@
         gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,pattern?.tex||imgTex);
         gl.uniform2fv(screenProg.u.uImgScale, imgScale(screen,pattern?.image||image));
         gl.uniform1i(screenProg.u.uLutW, bindLUT(id));
+        bindUnif(unifState(id));
+        const pn = panelOf(id);
+        if (pn) { gl.uniformMatrix3fv(screenProg.u.uPanel, false, pn.colMajor); gl.uniform2fv(screenProg.u.uRefUV, pn.refUV); }
         gl.bindVertexArray(screen.screen.vao);
         setCommon(screenProg, M, v);
         gl.drawElements(gl.TRIANGLES, screen.screen.count, gl.UNSIGNED_INT, 0);
@@ -1185,9 +1345,13 @@
     const st = extra || stateText(p);
     return `<div class="cap-name">${key}<b>${narrow ? shortDevice(p.device) : p.device}</b>${st ? `<small>${st}</small>` : ''}</div>`;
   }
-  const statsHTML = (e) => e
+  /** 屏幕中心的三项读数；n 为眼睛看到的 9 点均匀性（%），undefined 时不显示这一项。 */
+  const statsHTML = (e, n) => (e
     ? stat(Math.round(e.yRatio * 100), '%', '亮度') + stat(e.jncd.toFixed(1), 'JNCD', '色偏') + stat(e.de00.toFixed(1), '', 'ΔE2000')
-    : stat('—', '', '亮度') + stat('—', '', '色偏') + stat('—', '', 'ΔE2000');
+    : stat('—', '', '亮度') + stat('—', '', '色偏') + stat('—', '', 'ΔE2000'))
+    + (n === undefined ? '' : stat(n === null ? '—' : n.toFixed(n >= 99.95 ? 0 : 1), n === null ? '' : '%', '9 点均匀'));
+  // 9 点均匀性的取点：外接框 10 % / 50 % / 90 % 处（与屏幕数据库的 9 点法相同），没有均匀度数据时各点按 1 计
+  const NINE = [0.1, 0.5, 0.9].flatMap((fy) => [0.1, 0.5, 0.9].map((fx) => [fx, fy, 1]));
 
   /** 屏幕中心对应的 (θ, ψ手机坐标)；θ≈0 时沿用当前方向，保证曲线方向稳定。 */
   const psiLocal = () => AngleModel.norm360(S.psi + S.rot);
@@ -1204,7 +1368,7 @@
     const fold = duo && S.fold < 179.5 ? ` · 折叠 ${Math.round(S.fold)}°` : '';
     $('heroSub').textContent = `${where}${fold} · ${cm} cm`;
     $('dataTag').textContent = ids.some((id) => !getModel(id)) ? '数据待测' : '实测数据';
-    $('legend').classList.toggle('show', S.mode === 2);
+    updateLegend(ids);
     updatePad(M);
     updateCharts();
 
@@ -1215,7 +1379,24 @@
       if (!v || !getModel(id)) return null;
       const frame = v.dev.surfaceFrame?.(byId(id).surface);
       const a = frame ? anglesAt(applyT(M, v.eye), frame.point, frame) : { theta: c.theta, psi };
+      // 中心的亮度 / 色偏 / ΔE 只计视角，与方向盘、曲线一致；均匀度体现在画面、分布图、9 点均匀性和悬停读数里
       return getModel(id).evalAt(a.theta, a.psi);
+    };
+    // 眼睛看到的 9 点均匀性：计入均匀度时，或看亮度分布时显示（没有均匀度数据的只计视角）
+    const showNine = !S.stereo && (S.mode === 3 || (!!S.unif && ids.some((id) => Uniformity.info(byId(id).device))));
+    const nineFor = (i) => {
+      const id = ids[i], v = views[i];
+      if (!showNine) return undefined;
+      if (!v || !getModel(id)) return null;
+      const st = unifState(id);
+      if (S.unif && !st.on && (st.why === 'loading' || S.mode !== 3)) return null;
+      const surface = byId(id).surface, [hx, hy] = v.dev.screenHalf, eye = applyT(M, v.eye), g = getGrid(id);
+      const ys = (st.on ? st.c.nine : NINE).map(([fx, fy, U]) => {
+        const frame = surface ? v.dev.surfaceFrame?.(surface, fx, 1 - fy) : null;
+        const a = anglesAt(eye, frame ? frame.point : [(fx - 0.5) * 2 * hx, (0.5 - fy) * 2 * hy, 0], frame);
+        return U * g.lum(a.theta, a.psi);
+      });
+      return Math.min(...ys) / Math.max(...ys) * 100;
     };
     const compact = compactStats();
     let hud = '';
@@ -1230,20 +1411,21 @@
         $('cap1').style.display = 'none';
       }
     } else if (S.compare) {
-      const rows = ids.map((id, i) => ({ p: byId(id), e: evalFor(i) }));
+      const rows = ids.map((id, i) => ({ p: byId(id), e: evalFor(i), n: nineFor(i) }));
       if (compact) {
-        hud = '<table class="hs-table"><tr><th></th><th>亮度</th><th>色偏</th><th>ΔE2000</th></tr>' + rows.map((r, i) =>
+        const nine = (n) => (n === undefined ? '' : `<td>${n === null ? '—' : n.toFixed(1) + '%'}</td>`);
+        hud = `<table class="hs-table"><tr><th></th><th>亮度</th><th>色偏</th><th>ΔE2000</th>${showNine ? '<th>9 点</th>' : ''}</tr>` + rows.map((r, i) =>
           `<tr><td><span class="key" style="--k:${SERIES[i]}"></span>${shortDevice(r.p.device)}${stateText(r.p) ? ' · ' + stateText(r.p) : ''}</td>` +
-          (r.e ? `<td>${Math.round(r.e.yRatio * 100)}%</td><td>${r.e.jncd.toFixed(1)}</td><td>${r.e.de00.toFixed(1)}</td>` : '<td>—</td><td>—</td><td>—</td>') + '</tr>').join('') + '</table>';
+          (r.e ? `<td>${Math.round(r.e.yRatio * 100)}%</td><td>${r.e.jncd.toFixed(1)}</td><td>${r.e.de00.toFixed(1)}</td>` : '<td>—</td><td>—</td><td>—</td>') + nine(r.n) + '</tr>').join('') + '</table>';
         hideCaptions();
       } else {
-        // 两张卡片等宽，按较窄的一栏定宽
-        const w = Math.min(...views.map((v) => v.w)) - (layout() === 'sheet' ? 12 : 24), cw = Math.min(w, 300), narrow = cw < 240;
+        // 两张卡片等宽，按较窄的一栏定宽；多一项 9 点均匀性时略放宽
+        const w = Math.min(...views.map((v) => v.w)) - (layout() === 'sheet' ? 12 : 24), cw = Math.min(w, showNine ? 340 : 300), narrow = cw < 240;
         rows.forEach((r, i) => placeCaption($('cap' + i), views[i].cx, views[i].bottomY + 12, cw,
-          capHead(r.p, i, narrow) + `<div class="cap-stats">${statsHTML(r.e)}</div>`, narrow));
+          capHead(r.p, i, narrow) + `<div class="cap-stats${showNine ? ' four' : ''}">${statsHTML(r.e, r.n)}</div>`, narrow));
       }
     } else {
-      hud = `<div class="hs-row">${statsHTML(evalFor(0))}</div>`;
+      hud = `<div class="hs-row">${statsHTML(evalFor(0), nineFor(0))}</div>`;
       hideCaptions();
     }
     const hs = $('hudStats');
@@ -1274,11 +1456,58 @@
     if (palApplied === S.pal) return;
     palApplied = S.pal;
     $('palette').value = S.pal;
-    const P = Viz.palette(S.pal);
     setPaletteTex(S.pal);
-    $('angRamp').style.background = Viz.paletteCSS(S.pal, P.banded ? 7 : 0, P.flipAngle);
   }
   $('palette').addEventListener('change', (e) => { S.pal = e.target.value; requestRender(); });
+
+  /** 分布图的色标、刻度和说明：离轴角固定 0–70°；亮度 / 色偏按当前画面的量程（computeHeat）。 */
+  let legendKey = '';
+  function updateLegend(ids) {
+    const on = S.mode >= 2;
+    $('legend').classList.toggle('show', on);
+    if (!on) return;
+    const P = Viz.palette(S.pal), unif = ids.some((id) => unifState(id).on);
+    const key = [S.mode, S.pal, heat.lo, heat.hi, heat.step, unif].join('|');
+    if (key === legendKey) return;
+    legendKey = key;
+    syncSeg('heatKind', S.mode);
+    if (S.mode === 2) {
+      $('angRamp').style.background = Viz.paletteCSS(S.pal, P.banded ? 7 : 0, P.flipAngle);
+      $('heatTicks').innerHTML = '<span>0°</span><span>35°</span><span>70°</span>';
+      $('heatNote').textContent = '屏幕上每一点相对眼睛的离轴角，细线为每 10° 等角线。';
+      return;
+    }
+    const lum = S.mode === 3, n = Math.round((heat.hi - heat.lo) / heat.step);
+    const fmt = (v) => (lum ? `${+(v * 100).toFixed(1)}%` : `${+v.toFixed(2)}`);
+    $('angRamp').style.background = Viz.paletteCSS(S.pal, P.banded ? n : 0, false);
+    $('heatTicks').innerHTML = [heat.lo, (heat.lo + heat.hi) / 2, heat.hi].map((v, i) => `<span>${fmt(v)}${!lum && i === 2 ? ' JNCD' : ''}</span>`).join('');
+    $('heatNote').textContent = (lum ? '眼睛看到的白场亮度，100% 为正对时的典型亮度' : '眼睛看到的白场与正对时的色差')
+      + `，细线每 ${lum ? fmt(heat.step) : heat.step + ' JNCD'}。` + (unif ? '含实测均匀度。' : '');
+  }
+
+  // ---------- 屏幕均匀度一节 ----------
+  const fmtNits = (v) => (v >= 10 ? Math.round(v) : v >= 0.1 ? v.toFixed(3) : v.toFixed(4)).toString();
+  const fmtK = (dT) => `${dT < 0 ? '−' : '+'}${Math.abs(Math.round(dT))} K`;
+  /** 当前各台在所选条件下的实测指标（正对；屏幕数据库记录的数值），悬停一行看典型值。 */
+  function syncUnifUI() {
+    syncSeg('unif', S.unif);
+    const ids = S.stereo ? [activeIds()[0]] : activeIds();
+    let html = '';
+    if (S.unif) {
+      html = '<table class="unif-table"><tr><th></th><th>9 点</th><th>面</th><th>色温差</th></tr>' + ids.map((id, i) => {
+        const p = byId(id), st = unifState(id), key = S.compare ? `<span class="key" style="--k:${SERIES[i]}"></span>` : '';
+        const name = `<td>${key}${shortDevice(p.device)}${stateText(p) ? `<small>${stateText(p)}</small>` : ''}</td>`;
+        if (st.why === 'none') return `<tr>${name}<td colspan="3" class="dim">未测</td></tr>`;
+        if (st.why === 'state') return `<tr>${name}<td colspan="3" class="dim">防窥模式未单独测</td></tr>`;
+        const c = Uniformity.condition(p.device, S.unif), m = c.metrics;
+        const tip = `典型值 ${fmtNits(c.typical.lum)} nits${c.typical.cct ? ` · ${Math.round(c.typical.cct)} K` : ''}`;
+        return `<tr title="${tip}">${name}<td>${m.u9.toFixed(1)}%</td><td>${m.ua.toFixed(1)}%</td><td>${c.cct ? Math.round(m.cct9) + ' K' : '—'}</td></tr>`;
+      }).join('') + '</table>';
+    }
+    if ($('unifInfo')._html !== html) { $('unifInfo').innerHTML = html; $('unifInfo')._html = html; }
+    $('unifNote').hidden = !S.unif;
+    fitRail();
+  }
 
   const padId = () => S.compare ? S.slots[S.padSide] : activeIds()[0];
   function updatePadRead() {
@@ -1393,13 +1622,15 @@
     tip.classList.remove('stereo');
     tip.style.width = '';
     const a = anglesOf(applyT(M, [E[0] - p[0], E[1] - p[1], E[2] - p[2]]));
-    const e = getModel(id).evalAt(a.theta, a.psi);
+    const st = unifState(id);
+    const e = withGain(id, getModel(id).evalAt(a.theta, a.psi), st.on ? st.g.at(local[0], local[1]) : null);
     tip.innerHTML =
       (S.compare ? `<span class="dim">${profileLabel(byId(id))}</span><br>` : '') +
       `此处离轴角 <b>${a.theta.toFixed(1)}°</b>${e.clamped ? ' <span class="warn">超出实测范围，按 70° 计</span>' : ''}<br>` +
       `亮度 <b>${Math.round(e.yRatio * 100)}%</b><br>` +
       `色偏 <b>${e.jncd.toFixed(1)}</b> JNCD <span class="dim">Δu′v′ ${e.duv.toFixed(4)}</span><br>` +
-      `ΔE2000 <b>${e.de00.toFixed(1)}</b> <span class="dim">含亮度</span>`;
+      `ΔE2000 <b>${e.de00.toFixed(1)}</b> <span class="dim">含亮度</span>` +
+      (st.on ? `<br><span class="dim">均匀度</span> ${(st.g.lum(local[0], local[1]) * 100).toFixed(1)}%${st.c.cct ? ` · 色温 ${fmtK(st.g.cct(local[0], local[1]))}` : ''}` : '');
     tip.style.display = 'block';
     const tw = tip.offsetWidth, th = tip.offsetHeight;
     tip.style.left = Math.min(hover.x + 16, innerWidth - tw - 8) + 'px';
@@ -1724,7 +1955,9 @@
     });
   }
   const syncSeg = (id, v) => $(id).querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.v === String(v)));
-  bindSeg('mode', (v) => { S.mode = +v; requestRender(); });
+  bindSeg('mode', (v) => { S.mode = v === 'heat' ? S.heat : +v; requestRender(); });
+  bindSeg('heatKind', (v) => { S.mode = S.heat = +v; requestRender(); });
+  bindSeg('unif', (v) => { S.unif = v; syncUnifUI(); requestRender(); });
   bindSeg('orient', (v) => { S.rot = +v; if (S.pattern) loadPattern(S.pattern); requestRender(); });
   bindSeg('padMetric', (v) => { S.padMetric = v; requestRender(); });
 
@@ -1800,6 +2033,7 @@
     renderDevCards();
     renderSwatches();
     syncQuick();
+    syncUnifUI();
     if (S.pattern) loadPattern(S.pattern);
   }
   function syncFoldUI() {
@@ -2055,6 +2289,7 @@
       q.set('d', Math.round(S.dist / 10));
       if (S.pattern && S.pattern !== 'ui') q.set('img', S.pattern);
       if (S.mode) q.set('m', S.mode);
+      if (S.unif) q.set('u', S.unif);
       if (S.rot) q.set('rot', S.rot);
       if (hasDuo()) { q.set('fold', S.fold); q.set('ds', S.duoSurface); }
       if (S.padMetric !== 'lum') q.set('k', S.padMetric);
@@ -2092,7 +2327,9 @@
     if (ab.length === 2 && ab.every(byId)) S.slots = ab;
     S.dist = Math.min(Math.max(num('d', 30), 10), 100) * 10;
     if (q.has('img') && /^(ui|dark|read|white|rgbw|checker|gray)$/.test(q.get('img'))) S.pattern = q.get('img');
-    S.mode = [0, 1, 2].includes(num('m', 0)) ? num('m', 0) : 0;
+    S.mode = [0, 1, 2, 3, 4].includes(num('m', 0)) ? num('m', 0) : 0;
+    if (S.mode >= 2) S.heat = S.mode;
+    S.unif = ['300', '100', '10'].includes(q.get('u')) ? q.get('u') : '';
     S.rot = num('rot', 0) === 90 ? 90 : 0;
     S.fold = Math.min(180, Math.max(0, num('fold', 180)));
     S.duoSurface = q.get('ds') === 'outer' ? 'outer' : 'inner';
@@ -2101,7 +2338,7 @@
     if (Viz.PALETTES[q.get('pal')]) S.pal = q.get('pal');
     appMode = /^(3d|scene)$/.test(q.get('mode') || '') ? 'scene' : 'sim';
     setView(num('t', 0), num('p', 0));
-    syncSeg('mode', S.mode); syncSeg('orient', S.rot); syncSeg('padMetric', S.padMetric);
+    syncSeg('mode', S.mode >= 2 ? 'heat' : S.mode); syncSeg('heatKind', S.heat); syncSeg('orient', S.rot); syncSeg('padMetric', S.padMetric);
   }
 
   // ---------- 模式：屏幕仿真（默认，本页原有工具）/ 场景演示（三维，scene3d.js，做动画用，从“画面 → 更多”进入） ----------
@@ -2159,5 +2396,5 @@
   setAppMode(appMode);
 
   // 调试 / 截图用
-  window.viewAngle = { S, setView, animateTo, setClean, setDist, setFold, getModel, render: () => render() };
+  window.viewAngle = { S, setView, animateTo, setClean, setDist, setFold, getModel, views: () => views, render: () => render() };
 })();

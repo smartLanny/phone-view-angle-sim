@@ -232,6 +232,19 @@ body.compare #secPad .sec-head h2 { display: none; }   /* 对比时标题让位�
 
 #legend { display: none; margin-top: 10px; }
 #legend.show { display: block; }
+#heatKind { margin-bottom: 10px; }
+#heatKind button { flex: 1; }
+
+/* 屏幕均匀度：所选档位下各台的实测指标（一台一行） */
+#unifInfo:empty { display: none; }
+.unif-table { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.unif-table th { padding: 0 0 3px 10px; font-size: 12px; font-weight: 500; color: var(--muted); text-align: right; white-space: nowrap; }
+.unif-table td { padding: 3px 0 3px 10px; text-align: right; font-weight: 600; white-space: nowrap; border-top: 1px solid var(--line); }
+.unif-table td:first-child { width: 100%; max-width: 0; padding-left: 0; text-align: left; font-weight: 500; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }   /* 名称占剩余宽度、过长省略，数值列按内容宽 */
+.unif-table td:first-child small { margin-left: 6px; color: var(--muted); font-size: 12px; }
+.unif-table td.dim { color: var(--muted); font-weight: 500; }
+.unif-table .key { display: inline-block; width: 8px; height: 8px; margin-right: 6px; }
+#unifNote a { color: var(--text-2); }
 
 /* 快捷键 */
 .keys-box summary { cursor: pointer; color: var(--text-2); font-size: 12px; list-style: none; display: flex; align-items: center; gap: 6px; min-height: 24px; }
@@ -256,6 +269,7 @@ body.compare #secPad .sec-head h2 { display: none; }   /* 对比时标题让位�
 .cap-name small { flex: none; color: var(--muted); font-size: 12px; }
 .cap-name .key { width: 8px; height: 8px; }
 .cap-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin-top: 6px; }
+.cap-stats.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .cap-stats > div { display: flex; flex-direction: column; align-items: center; min-width: 0; }
 .cap-stats b { font-size: 17px; font-weight: 600; line-height: 1.2; white-space: nowrap; }
 .cap-stats b small { font-size: 11px; font-weight: 500; color: var(--text-2); margin-left: 2px; }
@@ -265,6 +279,8 @@ body.compare #secPad .sec-head h2 { display: none; }   /* 对比时标题让位�
 .caption.narrow .cap-stats { margin-top: 4px; gap: 2px; }
 .caption.narrow .cap-stats b { font-size: 15px; }
 .caption.narrow .cap-stats > div:nth-child(2) b small { display: none; }   /* 窄卡片省掉 JNCD 单位，标签“色偏”已说明 */
+.caption.narrow .cap-stats.four { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.caption.narrow .cap-stats.four > div:nth-child(3) { display: none; }   /* 窄卡片放不下四项：9 点均匀性顶替 ΔE2000 */
 
 /* 悬停读数 */
 #tip, #tip2 {
