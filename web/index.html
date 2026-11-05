@@ -4,8 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0a0b0d">
 <title>可视角度仿真</title>
-<link rel="stylesheet" href="style.css?v=20261102-load">
+<meta name="description" content="根据实测离轴光谱数据，在浏览器里仿真手机屏幕从不同角度看过去的亮度衰减与色偏；可双机对比、看防窥模式与防窥膜效果。">
+<link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="可视角仿真">
+<!-- 分享链接时的预览卡片 -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="可视角度仿真">
+<meta property="og:title" content="手机屏幕可视角度仿真">
+<meta property="og:description" content="用实测数据看手机屏幕斜着看时变暗多少、偏什么色；双机对比、防窥效果、三维场景演示。">
+<meta property="og:url" content="https://smartlanny.github.io/phone-view-angle-sim/">
+<meta property="og:image" content="https://smartlanny.github.io/phone-view-angle-sim/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="style.css?v=20261105">
 <script>
   // 机身模型（约 2–3 MB）：默认打开的是 iPhone Duo，和下面的脚本同时开始下载，不必等页面脚本都跑完
   window.PHONE_ASSET_VERSION = { iphoneduo: '20261105-geo', iphone18pm: '20261105-geo', iphone17pm: '20261105-geo' };
@@ -202,7 +221,7 @@
         <button class="wide-btn present-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>隐藏界面</button>
         <button class="wide-btn share-btn span2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>复制当前视角的链接</button>
       </div>
-      <p class="note">三维场景可编排播放、导出视频。隐藏界面后，移动指针或轻点画面，右下角出现“退出演示”。链接里带着机型、角度和距离，打开即是同一个画面。</p>
+      <p class="note">三维场景可编排播放、导出视频。隐藏界面后，移动指针或轻点画面，右下角出现“退出演示”。</p>
     </section>
 
     <section class="sec" data-tab="screen" id="secHelp">
@@ -279,9 +298,9 @@
   <script src="patterns.js?v=20261025-duo-ui-account"></script>
 <script src="devices.js?v=20261027-hole"></script>
 <script src="duo-geometry.js?v=20261027-hole"></script>
-<script src="phone3d.js?v=20261102-jpg"></script>
+<script src="phone3d.js?v=20261105-geo"></script>
 <script src="viz.js?v=20261027-ui"></script>
 <!-- 三维场景（scene3d-person.js、scene3d.js）只在进入场景演示时再加载，见 app.js -->
-<script src="app.js?v=20261102-load"></script>
+<script src="app.js?v=20261105"></script>
 </body>
 </html>

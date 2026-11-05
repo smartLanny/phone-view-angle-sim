@@ -350,10 +350,15 @@
     if (S.stereo) {
       f = Math.min(halfW / mxE, halfH / myE) * S.size;
       colW = Math.min(colMax, 2 * mxE * f + 16);
+    } else if (n > 1) {
+      // 对比：手机受高度限制、两栏宽度有富余时（宽屏、演示模式），两台往中间靠，方便对照；
+      // 栏宽取全部偏转姿态的包络再留约三分之一机宽的间距，任何角度都不会相互遮挡；至少放得下 300 px 的数据卡
+      const envW = 2 * mxE * f;
+      colW = Math.min(colMax, Math.max(envW + Math.max(48, envW * 0.35), 324));
     }
     const centers = S.stereo
       ? [areaX0 + areaW / 2 - (colW + gap) / 2, areaX0 + areaW / 2 + (colW + gap) / 2]
-      : devs.map((_, i) => areaX0 + (i + 0.5) * colW);
+      : devs.map((_, i) => areaX0 + areaW / 2 + (i - (n - 1) / 2) * colW);
     const envH = myE * f;
     // 对比 / 立体：手机受宽度限制变矮时，把“手机 + 数据卡”整体在舞台里垂直居中，不让卡片下面空一大块
     const groupH = 2 * Math.min(envH, halfH) + (cards ? 8 + capSpace : 0);
@@ -1530,7 +1535,7 @@
     if (layout() !== 'wide') return;
     const rail = $('rail'), d = $('secDisplay'), inRail = d.parentElement === rail;
     if (inRail) dispH = d.offsetHeight || dispH;
-    const fits = rail.scrollHeight - (inRail ? d.offsetHeight : 0) + dispH <= innerHeight - 40;
+    const fits = rail.scrollHeight - (inRail ? d.offsetHeight : 0) + dispH <= innerHeight - rail.getBoundingClientRect().top - 20;   // 左栏上下各留 20 px（顶部可能还让出了状态栏）
     if (fits === inRail) return;
     railFull = fits;
     placeSecs(fits ? RAIL_SECS.wide : RAIL_SECS.wide.filter((id) => id !== 'secDisplay'));
